@@ -1,0 +1,19 @@
+# Build SVT-AV1 binary for Windows.
+
+name: Build SVT-AV1 binary for Windows.
+on: [push]
+
+jobs:
+    build:
+        if: ${{ github.event_name == 'push'}}
+        runs-on: windows-latest
+        strategy:
+            fail-fast: true
+        steps:
+            - uses: actions/checkout@v2.3.5
+            - name: Build SVT-AV1
+                run: |
+                    cd Build\windows
+                    build.bat 2019
+                    dir
+        
