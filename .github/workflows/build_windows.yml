@@ -17,7 +17,7 @@ jobs:
             - name: Build SVT-AV1
               run: |
                   cd Build\windows
-                  .\build.bat 2019
+                  .\build.bat 2019 release
                   cd ..\..
                   dir Bin\Release
                   Compress-Archive Bin\Release SVT-AV1-windows-x64.zip
