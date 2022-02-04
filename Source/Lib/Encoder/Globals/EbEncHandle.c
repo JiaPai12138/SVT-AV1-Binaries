@@ -308,9 +308,10 @@ void init_intra_predictors_internal(void);
 void svt_av1_init_me_luts(void);
 
 static void enc_switch_to_real_time(){
-#if !defined(_WIN32) && !DISABLE_REALTIME
-    (void)pthread_setschedparam(
-        pthread_self(), SCHED_FIFO, &(struct sched_param){.sched_priority = 99});
+#if !defined(_WIN32)
+    if (!geteuid())
+        (void)pthread_setschedparam(
+            pthread_self(), SCHED_FIFO, &(struct sched_param){.sched_priority = 99});
 #endif
 }
 #define SINGLE_CORE_COUNT       1
@@ -2769,8 +2770,13 @@ void tf_controls(SequenceControlSet* scs_ptr, uint8_t tf_level) {
         scs_ptr->tf_params_per_type[0].do_chroma = 0;
         scs_ptr->tf_params_per_type[0].pred_error_32x32_th = (uint64_t)~0;
         scs_ptr->tf_params_per_type[0].sub_sampling_shift = 1;
+#if OPT_RES_CHECKS_3
+        scs_ptr->tf_params_per_type[0].use_fast_filter = 0;
+        scs_ptr->tf_params_per_type[0].use_medium_filter = 1;
+#else
         scs_ptr->tf_params_per_type[0].use_fast_filter = (scs_ptr->input_resolution < INPUT_SIZE_1080p_RANGE) ? 1 : 0;
         scs_ptr->tf_params_per_type[0].use_medium_filter = (scs_ptr->input_resolution < INPUT_SIZE_1080p_RANGE) ? 0 : 1;
+#endif
         scs_ptr->tf_params_per_type[0].avoid_2d_qpel = 1;
         scs_ptr->tf_params_per_type[0].use_2tap = 1;
         scs_ptr->tf_params_per_type[0].use_intra_for_noise_est = 1;
@@ -2794,8 +2800,13 @@ void tf_controls(SequenceControlSet* scs_ptr, uint8_t tf_level) {
         scs_ptr->tf_params_per_type[1].do_chroma = 0;
         scs_ptr->tf_params_per_type[1].pred_error_32x32_th = (uint64_t)~0;
         scs_ptr->tf_params_per_type[1].sub_sampling_shift = 1;
+#if OPT_RES_CHECKS_3
+        scs_ptr->tf_params_per_type[1].use_fast_filter = 0;
+        scs_ptr->tf_params_per_type[1].use_medium_filter = 1;
+#else
         scs_ptr->tf_params_per_type[1].use_fast_filter = (scs_ptr->input_resolution < INPUT_SIZE_1080p_RANGE) ? 1 : 0;
         scs_ptr->tf_params_per_type[1].use_medium_filter = (scs_ptr->input_resolution < INPUT_SIZE_1080p_RANGE) ? 0 : 1;
+#endif
         scs_ptr->tf_params_per_type[1].avoid_2d_qpel = 1;
         scs_ptr->tf_params_per_type[1].use_2tap = 1;
         scs_ptr->tf_params_per_type[1].use_intra_for_noise_est = 1;
@@ -3066,12 +3077,27 @@ uint8_t get_tpl_level(int8_t enc_mode, int32_t pass, int32_t lap_enabled, uint8_
     }
     else if (enc_mode <= ENC_M5)
         tpl_level = 1;
+#if OPT_M7_4K
+    else if (enc_mode <= ENC_M6)
+        tpl_level = 3;
+#else
     else if (enc_mode <= ENC_M7)
         tpl_level = 3;
+#endif
+#if !OPT_M9_4K
     else if (enc_mode <= ENC_M8)
         tpl_level = 4;
+#else
+    else if (enc_mode <= ENC_M9)
+        tpl_level = 4;
+#if !OPT_M10_4K
     else if (enc_mode <= ENC_M9)
         tpl_level = 5;
+#else
+    else if (enc_mode <= ENC_M10)
+        tpl_level = 5;
+#endif
+#endif
     else
         tpl_level = 7;
 
@@ -3424,11 +3450,26 @@ void set_param_based_on_input(SequenceControlSet *scs_ptr)
         scs_ptr->over_boundary_block_mode = scs_ptr->over_bndry_blk;
     if (scs_ptr->static_config.pass == ENC_FIRST_PASS)
         scs_ptr->over_boundary_block_mode = 0;
+
+#if OPT_M10_4K
+    if (scs_ptr->static_config.enable_mfmv == DEFAULT)
+        if (scs_ptr->static_config.enc_mode <= ENC_M5)
+            scs_ptr->mfmv_enabled = 1;
+        else if(scs_ptr->static_config.enc_mode <= ENC_M10)
+            if (scs_ptr->input_resolution <= INPUT_SIZE_1080p_RANGE)
+                scs_ptr->mfmv_enabled = 1;
+            else
+                scs_ptr->mfmv_enabled = 0;
+        else
+            scs_ptr->mfmv_enabled = 0;
+    else
+        scs_ptr->mfmv_enabled = scs_ptr->static_config.enable_mfmv;
+#else
     if (scs_ptr->static_config.enable_mfmv == DEFAULT)
             scs_ptr->mfmv_enabled = (uint8_t)(scs_ptr->static_config.enc_mode <= ENC_M10) ? 1 : 0;
     else
         scs_ptr->mfmv_enabled = scs_ptr->static_config.enable_mfmv;
-
+#endif
     // Set hbd_mode_decision OFF for high encode modes or bitdepth < 10
     if (scs_ptr->static_config.encoder_bit_depth < 10)
         scs_ptr->enable_hbd_mode_decision = 0;
@@ -3471,7 +3512,11 @@ void set_param_based_on_input(SequenceControlSet *scs_ptr)
     if (scs_ptr->static_config.enable_adaptive_quantization == 1 ||
         scs_ptr->static_config.scene_change_detection == 1)
         scs_ptr->calculate_variance = 1;
+#if OPT_M11_4K
+    else if (scs_ptr->static_config.enc_mode <= ENC_M10)
+#else
     else if (scs_ptr->static_config.enc_mode <= ENC_M11)
+#endif
         scs_ptr->calculate_variance = 1;
     else
         scs_ptr->calculate_variance = 0;
@@ -3844,12 +3889,12 @@ static EbErrorType verify_settings(
     }
 
     if (scs_ptr->max_input_luma_width > 16384) {
-        SVT_ERROR("Instance %u: Source Width must be less than 16384\n", channel_number + 1);
+        SVT_ERROR("Instance %u: Source Width must be less than or equal to 16384\n", channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
 
     if (scs_ptr->max_input_luma_height > 8704) {
-        SVT_ERROR("Instance %u: Source Height must be less than 8704)\n", channel_number + 1);
+        SVT_ERROR("Instance %u: Source Height must be less than or equal to 8704)\n", channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
 
@@ -5374,7 +5419,9 @@ EB_API void svt_av1_print_version(void) {
     SVT_INFO("-------------------------------------------\n");
     SVT_INFO("SVT [version]:\tSVT-AV1 Encoder Lib %s\n", SVT_AV1_CVS_VERSION);
     const char *compiler =
-#if defined( _MSC_VER ) && (_MSC_VER >= 1920)
+#if defined( _MSC_VER ) && (_MSC_VER >= 1930)
+    "Visual Studio 2022"
+#elif defined( _MSC_VER ) && (_MSC_VER >= 1920)
     "Visual Studio 2019"
 #elif defined( _MSC_VER ) && (_MSC_VER >= 1910)
     "Visual Studio 2017"
