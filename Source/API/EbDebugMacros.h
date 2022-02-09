@@ -54,6 +54,16 @@ extern "C" {
 #define OPT_M6_4K               1 // Tune M6 for 4k
 
 #define FIX_VBR_DIV0            1 // Fix the VBR div by zero in multipass mode
+
+#define FIX_CHECK_NON_INITIALIZED_VAR       1 // Move around the condition to avoid non-initialized variable
+#define FIX_USE_ME_DATA_ISLICE              1 // Properly initialize the ME data when the picture is I-SLICE and used as reference
+#define FIX_PALETTE_10BIT                   1 // Remove palette scaling for non-intra candidates
+#define FIX_CHROMA_PREDICTION_AVAILABILITY  1 // Align chroma prediction generation and use
+
+
+#define TPL_LAD_MG_ZERO         1 // Set tpl_lad_mg to 0 when lookAhead is smalller than mini_gop size
+#define TUNE_LP_VBR             1 // Tune lp 16 and above for VBR
+
 //FOR DEBUGGING - Do not remove
 #define LOG_ENC_DONE            0 // log encoder job one
 #define NO_ENCDEC               0 // bypass encDec to test cmpliance of MD. complained achieved when skip_flag is OFF. Port sample code from VCI-SW_AV1_Candidate1 branch
@@ -71,6 +81,7 @@ extern "C" {
 #else
 #define REMOVE_LP1_LPN_DIFF     0 // Disallow single-thread/multi-thread differences
 #endif
+#define FIX_1PVBR               1 // Derive initial qp based on target bitrate
 // Super-resolution debugging code
 #define DEBUG_SCALING           0
 #define DEBUG_TF                0
