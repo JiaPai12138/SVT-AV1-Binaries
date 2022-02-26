@@ -64,13 +64,33 @@ void assert_err(uint32_t condition, char *err_msg);
 #define AOM_LEFT_TOP_MARGIN_SCALED(subsampling) \
     (AOM_LEFT_TOP_MARGIN_PX(subsampling) << SCALE_SUBPEL_BITS)
 
-#define DS_SC_FACT              23
+#define DS_SC_FACT 23
 
+#define VQ_NOISE_LVL_TH 15000
+#define VQ_STABILITY_ME_VAR_TH 750
+
+typedef struct SharpnessCtrls {
+    uint8_t scene_transition;
+    uint8_t tf;
+    uint8_t unipred_bias;
+    uint8_t ifs;
+    uint8_t cdef;
+    uint8_t restoration;
+} SharpnessCtrls;
+
+typedef struct StabilityCtrls {
+    uint8_t depth_refinement;
+} StabilityCtrls;
+
+typedef struct VqCtrls {
+    SharpnessCtrls sharpness_ctrls;
+    StabilityCtrls stability_ctrls;
+} VqCtrls;
 typedef struct MrpCtrls {
     // Referencing scheme
     uint8_t referencing_scheme; // 0 or 1
 
-                                // SC signals
+    // SC signals
     uint8_t sc_base_ref_list0_count;
     uint8_t sc_base_ref_list1_count;
     uint8_t sc_non_base_ref_list0_count;
@@ -93,7 +113,7 @@ typedef struct TfControls {
     uint8_t
         use_fixed_point; // Specifies noise-level-estimation and filtering precision (0: use float/double precision, 1: use fixed point precision)
 
-                         // Number of reference frame(s) set
+    // Number of reference frame(s) set
     uint8_t num_past_pics; // Specifies the default number of frame(s) from past
     uint8_t num_future_pics; // Specifies the default number of frame(s) from future
     uint8_t
@@ -107,7 +127,7 @@ typedef struct TfControls {
     uint8_t
         max_num_future_pics; // Specifies the maximum number of frame(s) from future(after all adjustments)
 
-                             // Motion search
+    // Motion search
     uint8_t
         hme_me_level; // Specifies the accuracy of the ME search (note that ME performs a HME search, then a Full - Pel search).
     uint8_t
@@ -248,8 +268,9 @@ enum {
 #define SB_STRIDE_UV (MAX_SB_SIZE >> 1)
 
 #define INTERPOLATION_OFFSET 8
-#define STRIDE_PACK   (MAX_SB_SIZE + (INTERPOLATION_OFFSET << 1))
-#define PACKED_BUFFER_SIZE ((MAX_SB_SIZE + (INTERPOLATION_OFFSET << 1)) * (MAX_SB_SIZE+(INTERPOLATION_OFFSET << 1)))
+#define STRIDE_PACK (MAX_SB_SIZE + (INTERPOLATION_OFFSET << 1))
+#define PACKED_BUFFER_SIZE \
+    ((MAX_SB_SIZE + (INTERPOLATION_OFFSET << 1)) * (MAX_SB_SIZE + (INTERPOLATION_OFFSET << 1)))
 
 // Min superblock size
 #define MIN_SB_SIZE 64
@@ -556,12 +577,12 @@ typedef enum ATTRIBUTE_PACKED {
 typedef enum ATTRIBUTE_PACKED {
     REGULAR_PD1 =
         -1, // The regular PD1 path; negative so that LPD1 can start at 0 (easy for indexing arrays in lpd1_ctrls)
-    LPD1_LVL_0  = 0, // Light-PD1 path, with safest feature levels
-    LPD1_LVL_1  = 1, // Light PD1 path, having more shortcuts than previous LPD1 level
-    LPD1_LVL_2  = 2, // Light PD1 path, having more shortcuts than previous LPD1 level
-    LPD1_LVL_3  = 3, // Light PD1 path, having more shortcuts than previous LPD1 level
-    LPD1_LVL_4  = 4, // Light PD1 path, having more shortcuts than previous LPD1 level
-    LPD1_LVL_5  = 5, // Light-PD1 path, with most aggressive feature levels
+    LPD1_LVL_0 = 0, // Light-PD1 path, with safest feature levels
+    LPD1_LVL_1 = 1, // Light PD1 path, having more shortcuts than previous LPD1 level
+    LPD1_LVL_2 = 2, // Light PD1 path, having more shortcuts than previous LPD1 level
+    LPD1_LVL_3 = 3, // Light PD1 path, having more shortcuts than previous LPD1 level
+    LPD1_LVL_4 = 4, // Light PD1 path, having more shortcuts than previous LPD1 level
+    LPD1_LVL_5 = 5, // Light-PD1 path, with most aggressive feature levels
     LPD1_LEVELS // Number of light-PD1 paths (regular PD1 isn't a light-PD1 path)
 } Pd1Level;
 typedef enum CandClass {
@@ -2643,11 +2664,6 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define CLASS_SUB_0_PICTURE_ACTIVITY_REGIONS_TH             1
 #define CLASS_1_SIZE_PICTURE_ACTIVITY_REGIONS_TH            2
 #define HIGHER_THAN_CLASS_1_PICTURE_ACTIVITY_REGIONS_TH     8
-
-#define IS_COMPLEX_SB_VARIANCE_TH                          100
-#define IS_COMPLEX_SB_FLAT_VARIANCE_TH                     10
-#define IS_COMPLEX_SB_VARIANCE_DEVIATION_TH                13
-#define IS_COMPLEX_SB_ZZ_SAD_FACTOR_TH                     25
 
 #define MAX_SUPPORTED_SEGMENTS                            7
 #define NUM_QPS                                           52

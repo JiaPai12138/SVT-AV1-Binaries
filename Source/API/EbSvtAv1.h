@@ -25,7 +25,7 @@ struct SvtMetadataArray;
 // API Version
 #define SVT_AV1_VERSION_MAJOR 0
 #define SVT_AV1_VERSION_MINOR 9
-#define SVT_AV1_VERSION_PATCHLEVEL 0
+#define SVT_AV1_VERSION_PATCHLEVEL 1
 
 #ifndef SVT_VERSION_MAJOR
 #define SVT_VERSION_MAJOR SVT_AV1_VERSION_MAJOR
@@ -128,8 +128,8 @@ typedef struct EbBufferHeaderType {
 
 typedef struct EbComponentType {
     uint32_t size;
-    void *   p_component_private;
-    void *   p_application_private;
+    void    *p_component_private;
+    void    *p_application_private;
 } EbComponentType;
 
 typedef enum EbErrorType {
