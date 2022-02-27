@@ -6,7 +6,7 @@ on: [push]
 jobs:
     build:
         if: ${{ github.event_name == 'push'}}
-        runs-on: windows-latest
+        runs-on: windows-2019
         strategy:
             fail-fast: true
         steps:
