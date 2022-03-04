@@ -391,11 +391,11 @@ void svt_c_pack_avx2_intrin(const uint8_t *inn_bit_buffer, uint32_t inn_stride,
                     __m256i c0 = _mm256_loadu_si256((__m256i *)(local_ptr));
                     __m256i c1 = _mm256_loadu_si256((__m256i *)(local_ptr + 32));
                     _mm_storeu_si128((__m128i *)(in_compn_bit_buffer),
-                                     _mm256_extractf128_si256(c0, 0));
+                                     _mm256_castsi256_si128(c0));
                     _mm_storeu_si128((__m128i *)(in_compn_bit_buffer + out_stride),
                                      _mm256_extractf128_si256(c0, 1));
                     _mm_storeu_si128((__m128i *)(in_compn_bit_buffer + 2 * out_stride),
-                                     _mm256_extractf128_si256(c1, 0));
+                                     _mm256_castsi256_si128(c1));
                     _mm_storeu_si128((__m128i *)(in_compn_bit_buffer + 3 * out_stride),
                                      _mm256_extractf128_si256(c1, 1));
                     in_compn_bit_buffer += 4 * out_stride;
@@ -513,6 +513,40 @@ void svt_enc_msb_pack2d_avx2_intrin_al(uint8_t *in8_bit_buffer, uint32_t in8_str
             inn_bit_buffer += inn_stride << 1;
             out16_bit_buffer += out_stride << 1;
         }
+    } else if (width == 24) {
+        __m128i in_n_bit, in_8_bit, in_n_bit_stride, in_8bit_stride, out2, out3, out4, out5;
+
+        for (y = 0; y < height; y += 2) {
+            in_n_bit        = _mm_loadu_si128((__m128i *)inn_bit_buffer);
+            in_8_bit        = _mm_loadu_si128((__m128i *)in8_bit_buffer);
+            in_n_bit_stride = _mm_loadu_si128((__m128i *)(inn_bit_buffer + inn_stride));
+            in_8bit_stride  = _mm_loadu_si128((__m128i *)(in8_bit_buffer + in8_stride));
+
+            out0 = _mm_srli_epi16(_mm_unpacklo_epi8(in_n_bit, in_8_bit), 6);
+            out1 = _mm_srli_epi16(_mm_unpackhi_epi8(in_n_bit, in_8_bit), 6);
+            out2 = _mm_srli_epi16(_mm_unpacklo_epi8(in_n_bit_stride, in_8bit_stride), 6);
+            out3 = _mm_srli_epi16(_mm_unpackhi_epi8(in_n_bit_stride, in_8bit_stride), 6);
+
+            out4 = _mm_srli_epi16(
+                _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(inn_bit_buffer + 16)),
+                                  _mm_loadl_epi64((__m128i *)(in8_bit_buffer + 16))),
+                6);
+            out5 = _mm_srli_epi16(
+                _mm_unpacklo_epi8(_mm_loadl_epi64((__m128i *)(inn_bit_buffer + inn_stride + 16)),
+                                  _mm_loadl_epi64((__m128i *)(in8_bit_buffer + in8_stride + 16))),
+                6);
+
+            _mm_storeu_si128((__m128i *)out16_bit_buffer, out0);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + 8), out1);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride), out2);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride + 8), out3);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + 16), out4);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride + 16), out5);
+
+            in8_bit_buffer += in8_stride << 1;
+            inn_bit_buffer += inn_stride << 1;
+            out16_bit_buffer += out_stride << 1;
+        }
     } else if (width == 32) {
         __m256i in_n_bit, in_8_bit, in_n_bit_stride, in_8bit_stride, concat0, concat1, concat2,
             concat3;
@@ -542,8 +576,54 @@ void svt_enc_msb_pack2d_avx2_intrin_al(uint8_t *in8_bit_buffer, uint32_t in8_str
             _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride + 16), out_s16_s31);
 
             in8_bit_buffer += in8_stride << 1;
-            //inn_bit_buffer += inn_stride << 1;
-            inn_bit_buffer += inn_stride * 2;
+            inn_bit_buffer += inn_stride << 1;
+            out16_bit_buffer += out_stride << 1;
+        }
+    } else if (width == 48) {
+        __m128i xx_in_n_bit, xx_in_8_bit, xx_in_n_bit_stride, xx_in_8bit_stride, out2, out3;
+        __m256i in_n_bit, in_8_bit, in_n_bit_stride, in_8bit_stride, concat0, concat1, concat2,
+            concat3;
+        __m256i out0_15, out16_31, out_s0_s15, out_s16_s31;
+
+        for (y = 0; y < height; y += 2) {
+            in_n_bit        = _mm256_loadu_si256((__m256i *)inn_bit_buffer);
+            in_8_bit        = _mm256_loadu_si256((__m256i *)in8_bit_buffer);
+            in_n_bit_stride = _mm256_loadu_si256((__m256i *)(inn_bit_buffer + inn_stride));
+            in_8bit_stride  = _mm256_loadu_si256((__m256i *)(in8_bit_buffer + in8_stride));
+            xx_in_n_bit        = _mm_loadu_si128((__m128i *)(inn_bit_buffer + 32));
+            xx_in_8_bit        = _mm_loadu_si128((__m128i *)(in8_bit_buffer + 32));
+            xx_in_n_bit_stride = _mm_loadu_si128((__m128i *)(inn_bit_buffer + inn_stride + 32));
+            xx_in_8bit_stride  = _mm_loadu_si128((__m128i *)(in8_bit_buffer + in8_stride + 32));
+
+            //(out_pixel | n_bit_pixel) concatenation is done with unpacklo_epi8 and unpackhi_epi8
+            concat0 = _mm256_srli_epi16(_mm256_unpacklo_epi8(in_n_bit, in_8_bit), 6);
+            concat1 = _mm256_srli_epi16(_mm256_unpackhi_epi8(in_n_bit, in_8_bit), 6);
+            concat2 = _mm256_srli_epi16(_mm256_unpacklo_epi8(in_n_bit_stride, in_8bit_stride), 6);
+            concat3 = _mm256_srli_epi16(_mm256_unpackhi_epi8(in_n_bit_stride, in_8bit_stride), 6);
+
+            out0 = _mm_srli_epi16(_mm_unpacklo_epi8(xx_in_n_bit, xx_in_8_bit), 6);
+            out1 = _mm_srli_epi16(_mm_unpackhi_epi8(xx_in_n_bit, xx_in_8_bit), 6);
+            out2 = _mm_srli_epi16(_mm_unpacklo_epi8(xx_in_n_bit_stride, xx_in_8bit_stride), 6);
+            out3 = _mm_srli_epi16(_mm_unpackhi_epi8(xx_in_n_bit_stride, xx_in_8bit_stride), 6);
+
+            //Re-organize the packing for writing to the out buffer
+            out0_15     = _mm256_inserti128_si256(concat0, _mm256_castsi256_si128(concat1), 1);
+            out16_31    = _mm256_inserti128_si256(concat1, _mm256_extracti128_si256(concat0, 1), 0);
+            out_s0_s15  = _mm256_inserti128_si256(concat2, _mm256_castsi256_si128(concat3), 1);
+            out_s16_s31 = _mm256_inserti128_si256(concat3, _mm256_extracti128_si256(concat2, 1), 0);
+
+            _mm256_storeu_si256((__m256i *)out16_bit_buffer, out0_15);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + 16), out16_31);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride), out_s0_s15);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride + 16), out_s16_s31);
+
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + 32), out0);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + 40), out1);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride + 32), out2);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride + 40), out3);
+
+            in8_bit_buffer += in8_stride << 1;
+            inn_bit_buffer += inn_stride << 1;
             out16_bit_buffer += out_stride << 1;
         }
     } else if (width == 64) {
@@ -595,8 +675,73 @@ void svt_enc_msb_pack2d_avx2_intrin_al(uint8_t *in8_bit_buffer, uint32_t in8_str
             _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride + 48), out_s48_s63);
 
             in8_bit_buffer += in8_stride << 1;
-            //inn_bit_buffer += inn_stride << 1;
-            inn_bit_buffer += inn_stride * 2;
+            inn_bit_buffer += inn_stride << 1;
+            out16_bit_buffer += out_stride << 1;
+        }
+    } else if (width == 80) {
+        __m128i xx_in_n_bit, xx_in_8_bit, xx_in_n_bit_stride, xx_in_8bit_stride, out2, out3;
+        __m256i in_n_bit, in_8_bit, in_n_bit_stride, in_8bit_stride, in_n_bit32, in_8_bit32,
+            in_n_bitStride32, in_8bit_stride32;
+        __m256i concat0, concat1, concat2, concat3, concat4, concat5, concat6, concat7;
+        __m256i out_0_15, out16_31, out32_47, out_48_63, out_s0_s15, out_s16_s31, out_s32_s47,
+            out_s48_s63;
+
+        for (y = 0; y < height; y += 2) {
+            in_n_bit         = _mm256_loadu_si256((__m256i *)inn_bit_buffer);
+            in_8_bit         = _mm256_loadu_si256((__m256i *)in8_bit_buffer);
+            in_n_bit32       = _mm256_loadu_si256((__m256i *)(inn_bit_buffer + 32));
+            in_8_bit32       = _mm256_loadu_si256((__m256i *)(in8_bit_buffer + 32));
+            in_n_bit_stride  = _mm256_loadu_si256((__m256i *)(inn_bit_buffer + inn_stride));
+            in_8bit_stride   = _mm256_loadu_si256((__m256i *)(in8_bit_buffer + in8_stride));
+            in_n_bitStride32 = _mm256_loadu_si256((__m256i *)(inn_bit_buffer + inn_stride + 32));
+            in_8bit_stride32 = _mm256_loadu_si256((__m256i *)(in8_bit_buffer + in8_stride + 32));
+            xx_in_n_bit        = _mm_loadu_si128((__m128i *)(inn_bit_buffer + 64));
+            xx_in_8_bit        = _mm_loadu_si128((__m128i *)(in8_bit_buffer + 64));
+            xx_in_n_bit_stride = _mm_loadu_si128((__m128i *)(inn_bit_buffer + inn_stride + 64));
+            xx_in_8bit_stride  = _mm_loadu_si128((__m128i *)(in8_bit_buffer + in8_stride + 64));
+            //(out_pixel | n_bit_pixel) concatenation is done with unpacklo_epi8 and unpackhi_epi8
+            concat0 = _mm256_srli_epi16(_mm256_unpacklo_epi8(in_n_bit, in_8_bit), 6);
+            concat1 = _mm256_srli_epi16(_mm256_unpackhi_epi8(in_n_bit, in_8_bit), 6);
+            concat2 = _mm256_srli_epi16(_mm256_unpacklo_epi8(in_n_bit32, in_8_bit32), 6);
+            concat3 = _mm256_srli_epi16(_mm256_unpackhi_epi8(in_n_bit32, in_8_bit32), 6);
+            concat4 = _mm256_srli_epi16(_mm256_unpacklo_epi8(in_n_bit_stride, in_8bit_stride), 6);
+            concat5 = _mm256_srli_epi16(_mm256_unpackhi_epi8(in_n_bit_stride, in_8bit_stride), 6);
+            concat6 = _mm256_srli_epi16(_mm256_unpacklo_epi8(in_n_bitStride32, in_8bit_stride32), 6);
+            concat7 = _mm256_srli_epi16(_mm256_unpackhi_epi8(in_n_bitStride32, in_8bit_stride32), 6);
+
+            out0 = _mm_srli_epi16(_mm_unpacklo_epi8(xx_in_n_bit, xx_in_8_bit), 6);
+            out1 = _mm_srli_epi16(_mm_unpackhi_epi8(xx_in_n_bit, xx_in_8_bit), 6);
+            out2 = _mm_srli_epi16(_mm_unpacklo_epi8(xx_in_n_bit_stride, xx_in_8bit_stride), 6);
+            out3 = _mm_srli_epi16(_mm_unpackhi_epi8(xx_in_n_bit_stride, xx_in_8bit_stride), 6);
+
+            //Re-organize the packing for writing to the out buffer
+            out_0_15    = _mm256_inserti128_si256(concat0, _mm256_castsi256_si128(concat1), 1);
+            out16_31    = _mm256_inserti128_si256(concat1, _mm256_extracti128_si256(concat0, 1), 0);
+            out32_47    = _mm256_inserti128_si256(concat2, _mm256_castsi256_si128(concat3), 1);
+            out_48_63   = _mm256_inserti128_si256(concat3, _mm256_extracti128_si256(concat2, 1), 0);
+            out_s0_s15  = _mm256_inserti128_si256(concat4, _mm256_castsi256_si128(concat5), 1);
+            out_s16_s31 = _mm256_inserti128_si256(concat5, _mm256_extracti128_si256(concat4, 1), 0);
+            out_s32_s47 = _mm256_inserti128_si256(concat6, _mm256_castsi256_si128(concat7), 1);
+            out_s48_s63 = _mm256_inserti128_si256(concat7, _mm256_extracti128_si256(concat6, 1), 0);
+
+            _mm256_storeu_si256((__m256i *)out16_bit_buffer, out_0_15);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + 16), out16_31);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + 32), out32_47);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + 48), out_48_63);
+
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride), out_s0_s15);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride + 16), out_s16_s31);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride + 32), out_s32_s47);
+            _mm256_storeu_si256((__m256i *)(out16_bit_buffer + out_stride + 48), out_s48_s63);
+
+
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + 64), out0);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + 72), out1);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride + 64), out2);
+            _mm_storeu_si128((__m128i *)(out16_bit_buffer + out_stride + 72), out3);
+
+            in8_bit_buffer += in8_stride << 1;
+            inn_bit_buffer += inn_stride << 1;
             out16_bit_buffer += out_stride << 1;
         }
     } else {
@@ -2201,19 +2346,128 @@ static INLINE void svt_unpack_and_2bcompress_remainder(uint16_t *in16b_buffer,
     }
 }
 
+static INLINE void transpose(__m256i out[4], __m256i in[4]) {
+        const __m256i shufle_transpose_128 = _mm256_setr_epi8(
+                                        0,  4,  8, 12, 1,  5,  9, 13, 2,  6, 10, 14, 3,  7, 11, 15,
+                                        0,  4,  8, 12, 1,  5,  9, 13, 2,  6, 10, 14, 3,  7, 11, 15);
+    //in[0] = 00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  10 11 12 13 14 15 16 17  18 19 1A 1B 1C 1D 1E 1F
+    //in[1] = 20 21 22 23 24 25 26 27  28 29 2A 2B 2C 2D 2E 2F  30 31 32 33 34 35 36 37  38 39 3A 3B 3C 3D 3E 3F
+    //in[2] = 40 41 42 43 44 45 46 47  48 49 4A 4B 4C 4D 4E 4F  50 51 52 53 54 55 56 57  58 59 5A 5B 5C 5D 5E 5F
+    //in[3] = 60 61 62 63 64 65 66 67  68 69 6A 6B 6C 6D 6E 6F  70 71 72 73 74 75 76 77  78 79 7A 7B 7C 7D 7E 7F
+
+    __m256i A = _mm256_shuffle_epi8(in[0], shufle_transpose_128);
+    __m256i B = _mm256_shuffle_epi8(in[1], shufle_transpose_128);
+    __m256i C = _mm256_shuffle_epi8(in[2], shufle_transpose_128);
+    __m256i D = _mm256_shuffle_epi8(in[3], shufle_transpose_128);
+
+    A = _mm256_permute4x64_epi64(A, 0xd8); //ACBD:ABCD
+    B = _mm256_permute4x64_epi64(B, 0xd8); //ACBD:ABCD
+    C = _mm256_permute4x64_epi64(C, 0xd8); //ACBD:ABCD
+    D = _mm256_permute4x64_epi64(D, 0xd8); //ACBD:ABCD
+
+    A = _mm256_shuffle_epi32(A, 0xd8); //ACBDEGFH:ABCDEFGH
+    B = _mm256_shuffle_epi32(B, 0xd8); //ACBDEGFH:ABCDEFGH
+    C = _mm256_shuffle_epi32(C, 0xd8); //ACBDEGFH:ABCDEFGH
+    D = _mm256_shuffle_epi32(D, 0xd8); //ACBDEGFH:ABCDEFGH
+
+    __m256i t0 = _mm256_unpacklo_epi64(A, B);
+    __m256i t1 = _mm256_unpackhi_epi64(A, B);
+    __m256i t2 = _mm256_unpacklo_epi64(C, D);
+    __m256i t3 = _mm256_unpackhi_epi64(C, D);
+
+    //out[0] = 00 04 08 0C 10 14 18 1C  20 24 28 2C 30 34 38 3C  40 44 48 4C 50 54 58 5C  60 64 68 6C 70 74 78 7C
+    //out[1] = 01 05 09 0D 11 15 19 1D  21 25 29 2D 31 35 39 3D  41 45 49 4D 51 55 59 5D  61 65 69 6D 71 75 79 7D
+    //out[2] = 02 06 0A 0E 12 16 1A 1E  22 26 2A 2E 32 36 3A 3E  42 46 4A 4E 52 56 5A 5E  62 66 6A 6E 72 76 7A 7E
+    //out[3] = 03 07 0B 0F 13 17 1B 1F  23 27 2B 2F 33 37 3B 3F  43 47 4B 4F 53 57 5B 5F  63 67 6B 6F 73 77 7B 7F
+    out[0] = _mm256_permute2x128_si256(t0, t2, 0x20); //[A0/2:B0/2]
+    out[1] = _mm256_permute2x128_si256(t1, t3, 0x20); //[A0/2:B0/2]
+    out[2] = _mm256_permute2x128_si256(t0, t2, 0x31); //[A1/2:B1/2]
+    out[3] = _mm256_permute2x128_si256(t1, t3, 0x31); //[A1/2:B1/2]
+}
+
+static INLINE void unpack_and_2bcompress_32x4(uint16_t* in16b_buffer, uint8_t* out8b_buffer,
+                                               uint8_t *out2b_buffer, uint32_t in16_stride,
+                                               uint32_t out8_stride, uint32_t out2_stride) {
+    __m256i ymm_00ff = _mm256_set1_epi16(0x00FF);
+    __m256i msk_2b   = _mm256_set1_epi16(0x0003); //0000.0000.0000.0011
+    __m256i in0, in1;
+    __m256i in_buff[4];
+    __m256i tmp0, tmp1;
+    __m128i out0, out1;
+
+    for (int i = 0; i < 4; i++) {
+        //load 16b input
+        in0 = _mm256_loadu_si256((__m256i *)(in16b_buffer + i * in16_stride));
+        in1 = _mm256_loadu_si256((__m256i *)(in16b_buffer + i * in16_stride + 16));
+        //extract 8 most significant bits
+        tmp0   = _mm256_and_si256(_mm256_srli_epi16(in0, 2), ymm_00ff);
+        tmp1   = _mm256_and_si256(_mm256_srli_epi16(in1, 2), ymm_00ff);
+        //convert 16bit values to 8bit
+        out0 = _mm_packus_epi16(_mm256_castsi256_si128(tmp0), _mm256_extracti128_si256(tmp0, 1));
+        out1 = _mm_packus_epi16(_mm256_castsi256_si128(tmp1), _mm256_extracti128_si256(tmp1, 1));
+        //store 8bit buffer
+        _mm_storeu_si128((__m128i *)(out8b_buffer + i * out8_stride), out0);
+        _mm_storeu_si128((__m128i *)(out8b_buffer + i * out8_stride + 16), out1);
+
+        //extract 2 least significant bits
+        in0 = _mm256_and_si256(in0, msk_2b);
+        in1 = _mm256_and_si256(in1, msk_2b);
+
+        in_buff[i] = _mm256_permute4x64_epi64(_mm256_packs_epi16(in0, in1), 0xd8);
+    }
+
+    transpose(in_buff, in_buff);
+
+    in_buff[0] = _mm256_slli_epi16(in_buff[0], 6);
+    in_buff[1] = _mm256_slli_epi16(in_buff[1], 4);
+    in_buff[2] = _mm256_slli_epi16(in_buff[2], 2);
+
+    tmp0 = _mm256_or_si256(_mm256_or_si256(in_buff[0], in_buff[1]),
+                           _mm256_or_si256(in_buff[2], in_buff[3]));
+
+    _mm_storel_epi64((__m128i *)(out2b_buffer), _mm256_castsi256_si128(tmp0));
+    _mm_storeh_epi64((__m128i *)(out2b_buffer + out2_stride), _mm256_castsi256_si128(tmp0));
+    _mm_storel_epi64((__m128i *)(out2b_buffer + 2 * out2_stride), _mm256_extracti128_si256(tmp0, 1));
+    _mm_storeh_epi64((__m128i *)(out2b_buffer + 3 * out2_stride), _mm256_extracti128_si256(tmp0, 1));
+}
+
 void svt_unpack_and_2bcompress_avx2(uint16_t *in16b_buffer, uint32_t in16b_stride,
                                     uint8_t *out8b_buffer, uint32_t out8b_stride,
                                     uint8_t *out2b_buffer, uint32_t out2b_stride, uint32_t width,
                                     uint32_t height) {
+    uint32_t leftover_h4 = height & 3;
+    uint32_t h           = 0;
     if (width == 32) {
-        for (uint32_t h = 0; h < height; h++) {
+        for (; h < height - leftover_h4; h += 4) {
+            unpack_and_2bcompress_32x4(in16b_buffer + h * in16b_stride,
+                                       out8b_buffer + h * out8b_stride,
+                                       out2b_buffer + h * out2b_stride,
+                                       in16b_stride,
+                                       out8b_stride,
+                                       out2b_stride);
+        }
+        for (; h < height; h++) {
             unpack_and_2bcompress_32(in16b_buffer + h * in16b_stride,
                                      out8b_buffer + h * out8b_stride,
                                      out2b_buffer + h * out2b_stride,
                                      1);
         }
     } else if (width == 64) {
-        for (uint32_t h = 0; h < height; h++) {
+        for (; h < height - leftover_h4; h += 4) {
+            unpack_and_2bcompress_32x4(in16b_buffer + h * in16b_stride,
+                                       out8b_buffer + h * out8b_stride,
+                                       out2b_buffer + h * out2b_stride,
+                                       in16b_stride,
+                                       out8b_stride,
+                                       out2b_stride);
+            unpack_and_2bcompress_32x4(in16b_buffer + h * in16b_stride + 32,
+                                       out8b_buffer + h * out8b_stride + 32,
+                                       out2b_buffer + h * out2b_stride + 8,
+                                       in16b_stride,
+                                       out8b_stride,
+                                       out2b_stride);
+        }
+        for (; h < height; h++) {
             unpack_and_2bcompress_32(in16b_buffer + h * in16b_stride,
                                      out8b_buffer + h * out8b_stride,
                                      out2b_buffer + h * out2b_stride,
@@ -2223,7 +2477,24 @@ void svt_unpack_and_2bcompress_avx2(uint16_t *in16b_buffer, uint32_t in16b_strid
         uint32_t offset_rem   = width & 0xffffffe0;
         uint32_t offset2b_rem = offset_rem >> 2;
         uint32_t remainder    = width & 0x1f;
-        for (uint32_t h = 0; h < height; h++) {
+        for (; h < height - leftover_h4; h += 4) {
+            for (uint32_t w = 0; w < (width >> 5); w++)
+                unpack_and_2bcompress_32x4(in16b_buffer + h * in16b_stride + w * 32,
+                                           out8b_buffer + h * out8b_stride + w * 32,
+                                           out2b_buffer + h * out2b_stride + w * 8,
+                                           in16b_stride,
+                                           out8b_stride,
+                                           out2b_stride);
+            if (remainder) {
+                for (uint32_t hh = 0; hh < 4; hh++)
+                    svt_unpack_and_2bcompress_remainder(
+                        in16b_buffer + (h + hh) * in16b_stride + offset_rem,
+                        out8b_buffer + (h + hh) * out8b_stride + offset_rem,
+                        out2b_buffer + (h + hh) * out2b_stride + offset2b_rem,
+                        remainder);
+            }
+        }
+        for (; h < height; h++) {
             unpack_and_2bcompress_32(in16b_buffer + h * in16b_stride,
                                      out8b_buffer + h * out8b_stride,
                                      out2b_buffer + h * out2b_stride,
