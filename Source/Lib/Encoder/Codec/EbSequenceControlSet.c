@@ -110,7 +110,9 @@ EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *scs_ptr, EbPtr obj
     scs_ptr->new_nearest_comb_inject     = DEFAULT;
     scs_ptr->nsq_table                   = DEFAULT;
     scs_ptr->frame_end_cdf_update        = DEFAULT;
+#if !OPT_CAND_BUFF_MEM
     scs_ptr->set_chroma_mode             = DEFAULT;
+#endif
     scs_ptr->disable_cfl_flag            = DEFAULT;
     scs_ptr->obmc_level                  = DEFAULT;
     scs_ptr->rdoq_level                  = DEFAULT;
@@ -120,8 +122,8 @@ EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *scs_ptr, EbPtr obj
     scs_ptr->filter_intra_level          = DEFAULT;
     scs_ptr->enable_intra_edge_filter    = DEFAULT;
     scs_ptr->pic_based_rate_est          = DEFAULT;
-    scs_ptr->ext_block_flag              = EB_FALSE;
-    scs_ptr->ten_bit_format              = EB_FALSE;
+    scs_ptr->ext_block_flag              = FALSE;
+    scs_ptr->ten_bit_format              = FALSE;
 
     // Initialize SB params
     //allocation will happen in ress-corrd
@@ -208,7 +210,7 @@ EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *scs_ptr, EbPtr obj
     // intra angle delta
     scs_ptr->intra_angle_delta = DEFAULT;
 
-    scs_ptr->is_16bit_pipeline = EB_FALSE;
+    scs_ptr->is_16bit_pipeline = FALSE;
 
     scs_ptr->intrabc_mode = DEFAULT;
 
@@ -333,7 +335,7 @@ EbErrorType copy_sequence_control_set(SequenceControlSet *dst, SequenceControlSe
     dst->in_loop_ois                    = src->in_loop_ois;
     dst->enable_pic_mgr_dec_order       = src->enable_pic_mgr_dec_order;
     dst->enable_dec_order               = src->enable_dec_order;
-    dst->lap_enabled                    = src->lap_enabled;
+    dst->lap_rc                    = src->lap_rc;
 
     dst->lad_mg                        = src->lad_mg;
     dst->tpl_lad_mg                    = src->tpl_lad_mg;
@@ -370,7 +372,9 @@ EbErrorType copy_sequence_control_set(SequenceControlSet *dst, SequenceControlSe
     dst->new_nearest_comb_inject       = src->new_nearest_comb_inject;
     dst->nsq_table                     = src->nsq_table;
     dst->frame_end_cdf_update          = src->frame_end_cdf_update;
+#if !OPT_CAND_BUFF_MEM
     dst->set_chroma_mode               = src->set_chroma_mode;
+#endif
     dst->disable_cfl_flag              = src->disable_cfl_flag;
     dst->obmc_level                    = src->obmc_level;
     dst->rdoq_level                    = src->rdoq_level;
@@ -502,8 +506,8 @@ extern EbErrorType sb_params_init(SequenceControlSet *scs_ptr) {
                       raster_scan_blk_y[raster_scan_blk_index] +
                       raster_scan_blk_size[raster_scan_blk_index] >
                   scs_ptr->seq_header.max_frame_height))
-                ? EB_FALSE
-                : EB_TRUE;
+                ? FALSE
+                : TRUE;
         }
     }
 
@@ -570,16 +574,16 @@ EbErrorType sb_geom_init(SequenceControlSet *scs_ptr) {
                      (scs_ptr->sb_geom[sb_index].origin_y + blk_geom->origin_y +
                           blk_geom->bheight / 2 <
                       scs_ptr->seq_header.max_frame_height))
-                    ? EB_TRUE
-                    : EB_FALSE;
+                    ? TRUE
+                    : FALSE;
 
                 if (blk_geom->shape != PART_N)
                     blk_geom = get_blk_geom_mds(blk_geom->sqi_mds);
                 scs_ptr->sb_geom[sb_index].block_is_inside_md_scan[md_scan_block_index] =
                     ((scs_ptr->sb_geom[sb_index].origin_x >= scs_ptr->seq_header.max_frame_width) ||
                      (scs_ptr->sb_geom[sb_index].origin_y >= scs_ptr->seq_header.max_frame_height))
-                    ? EB_FALSE
-                    : EB_TRUE;
+                    ? FALSE
+                    : TRUE;
             } else {
                 if (blk_geom->shape != PART_N)
                     blk_geom = get_blk_geom_mds(blk_geom->sqi_mds);
@@ -589,16 +593,16 @@ EbErrorType sb_geom_init(SequenceControlSet *scs_ptr) {
                       scs_ptr->seq_header.max_frame_width) ||
                      (scs_ptr->sb_geom[sb_index].origin_y + blk_geom->origin_y + blk_geom->bheight >
                       scs_ptr->seq_header.max_frame_height))
-                    ? EB_FALSE
-                    : EB_TRUE;
+                    ? FALSE
+                    : TRUE;
 
                 scs_ptr->sb_geom[sb_index].block_is_inside_md_scan[md_scan_block_index] =
                     ((scs_ptr->sb_geom[sb_index].origin_x + blk_geom->origin_x + blk_geom->bwidth >
                       scs_ptr->seq_header.max_frame_width) ||
                      (scs_ptr->sb_geom[sb_index].origin_y + blk_geom->origin_y + blk_geom->bheight >
                       scs_ptr->seq_header.max_frame_height))
-                    ? EB_FALSE
-                    : EB_TRUE;
+                    ? FALSE
+                    : TRUE;
             }
         }
     }

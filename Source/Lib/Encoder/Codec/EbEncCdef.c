@@ -22,7 +22,7 @@ extern int16_t svt_av1_ac_quant_q3(int32_t qindex, int32_t delta, AomBitDepth bi
 
 #include "EbRateDistortionCost.h"
 
-void get_recon_pic(PictureControlSet *pcs_ptr, EbPictureBufferDesc **recon_ptr, EbBool is_highbd);
+void get_recon_pic(PictureControlSet *pcs_ptr, EbPictureBufferDesc **recon_ptr, Bool is_highbd);
 static INLINE uint64_t dist_8xn_16bit_c(const uint16_t *src, const uint16_t *dst,
                                         const int32_t dstride, const int32_t coeff_shift,
                                         int8_t height, uint8_t subsampling_factor) {
@@ -327,7 +327,7 @@ void svt_av1_cdef_frame(EncDecContext *context_ptr, SequenceControlSet *scs_ptr,
     FrameHeader                    *frm_hdr = &ppcs->frm_hdr;
 
     EbPictureBufferDesc *recon_picture_ptr;
-    get_recon_pic(pCs, &recon_picture_ptr, EB_FALSE);
+    get_recon_pic(pCs, &recon_picture_ptr, FALSE);
 
     EbByte recon_buffer_y = &(
         (recon_picture_ptr->buffer_y)[recon_picture_ptr->origin_x +
@@ -1144,10 +1144,11 @@ static uint64_t joint_strength_search_dual(int32_t *best_lev0, int32_t *best_lev
     }
     return best_tot_mse;
 }
-
+#if !CLN_DEFINITIONS
 #define STORE_CDEF_FILTER_STRENGTH(cdef_strength, pick_method, strength_idx)                \
     get_cdef_filter_strengths((pick_method), &pri_strength, &sec_strength, (strength_idx)); \
     cdef_strength = pri_strength * CDEF_SEC_STRENGTHS + sec_strength;
+#endif
 void finish_cdef_search(PictureControlSet *pcs_ptr) {
     struct PictureParentControlSet *ppcs    = pcs_ptr->parent_pcs_ptr;
     FrameHeader                    *frm_hdr = &ppcs->frm_hdr;
@@ -1244,7 +1245,7 @@ void finish_cdef_search(PictureControlSet *pcs_ptr) {
         &full_lambda,
         (uint8_t)pcs_ptr->parent_pcs_ptr->enhanced_picture_ptr->bit_depth,
         pcs_ptr->parent_pcs_ptr->frm_hdr.quantization_params.base_q_idx,
-        EB_FALSE);
+        FALSE);
     lambda   = full_lambda;
     mse[0]   = (uint64_t **)malloc(sizeof(*mse) * nvfb * nhfb);
     mse[1]   = (uint64_t **)malloc(sizeof(*mse) * nvfb * nhfb);
@@ -1281,13 +1282,18 @@ void finish_cdef_search(PictureControlSet *pcs_ptr) {
     // Scale down the cost of the (0,0) filter strength to bias selection towards off.
     // When off, can save the cost of the application.
     if (cdef_ctrls->zero_fs_cost_bias) {
+#if TUNE_FAST_DECODE
+        const uint16_t factor = cdef_ctrls->zero_fs_cost_bias;
+#endif
         for (i = 0; i < sb_count; i++) {
+#if !TUNE_FAST_DECODE
             uint16_t factor = cdef_ctrls->zero_fs_cost_bias;
             if (cdef_ctrls->scale_cost_bias_on_nz_coeffs) {
                 // count of nz-coeffs is divided by 256; adding 128 is for rounding
                 uint16_t factor_modifier = ((pcs_ptr->sb_count_nz_coeffs[sb_addr[i]] + 128) >> 8);
                 factor                   = factor_modifier < factor ? factor - factor_modifier : 0;
             }
+#endif
             mse[0][i][0] = (factor * mse[0][i][0]) >> 6;
             mse[1][i][0] = (factor * mse[1][i][0]) >> 6;
         }

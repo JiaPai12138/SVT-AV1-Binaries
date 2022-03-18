@@ -199,7 +199,7 @@ For more information on valid values for specific keys, refer to the [EbEncSetti
 | **LogicalProcessors**            | --lp                        | [0, core count of the machine] | 0           | Target (best effort) number of logical cores to be used. 0 means all. Refer to Appendix A.1                   |
 | **PinnedExecution**              | --pin                       | [0-1]                          | 0           | Pin the execution to the first --lp cores. Overwritten to 0 when `--ss` is set. Refer to Appendix A.1         |
 | **TargetSocket**                 | --ss                        | [-1,1]                         | -1          | Specifies which socket to run on, assumes a max of two sockets. Refer to Appendix A.1                         |
-| **FastDecode**                   | --fast-decode               | [0,3]                          | 0           | Tune settings to output bitstreams that can be decoded faster, higher values for faster decoding              |
+| **FastDecode**                   | --fast-decode               | [0,4]                          | 0           | Tune settings to output bitstreams that can be decoded faster, higher values for faster decoding              |
 | **Tune**                         | --tune                      | [0,1]                          | 1           | Specifies whether to use PSNR or VQ as the tuning metric [0 = VQ, 1 = PSNR]                                   |
 
 #### Rate Control Options
@@ -220,6 +220,11 @@ For more information on valid values for specific keys, refer to the [EbEncSetti
 | **UseFixedQIndexOffsets**        | --use-fixed-qindex-offsets       | [0-1]          | 0               | Overwrite the encoder default hierarchical layer based QP assignment and use fixed Q index offsets                   |
 | **KeyFrameQIndexOffset**         | --key-frame-qindex-offset        | [-256-255]     | 0               | Overwrite the encoder default keyframe Q index assignment                                                            |
 | **KeyFrameChromaQIndexOffset**   | --key-frame-chroma-qindex-offset | [-256-255]     | 0               | Overwrite the encoder default chroma keyframe Q index assignment                                                     |
+| **LumaYDCQindexOffset**          | --luma-y-dc-qindex-offset        | [-64-63]       | 0               | Overwrite the encoder default dc Q index offset for luma plane                                                       |
+| **ChromaUDCQindexOffset**        | --chroma-u-dc-qindex-offset      | [-64-63]       | 0               | Overwrite the encoder default dc Q index offset for chroma Cb plane                                                  |
+| **ChromaUACQindexOffset**        | --chroma-u-ac-qindex-offset      | [-64-63]       | 0               | Overwrite the encoder default ac Q index offset for chroma Cb plane                                                  |
+| **ChromaVDCQindexOffset**        | --chroma-v-dc-qindex-offset      | [-64-63]       | 0               | Overwrite the encoder default dc Q index offset for chroma Cr plane                                                  |
+| **ChromaVACQindexOffset**        | --chroma-v-ac-qindex-offset      | [-64-63]       | 0               | Overwrite the encoder default ac Q index offset for chroma Cr plane                                                  |
 | **QIndexOffsets**                | --qindex-offsets                 | any string     | `0,0,..,0`      | list of luma Q index offsets per hierarchical layer, separated by `,` with each offset in the range of [-256-255]    |
 | **ChromaQIndexOffsets**          | --chroma-qindex-offsets          | any string     | `0,0,..,0`      | list of chroma Q index offsets per hierarchical layer, separated by `,` with each offset in the range of [-256-255]  |
 | **UnderShootPct**                | --undershoot-pct                 | [0-100]        | 25              | Allowable datarate undershoot (min) target (%), default depends on the rate control mode                             |

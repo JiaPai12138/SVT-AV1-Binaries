@@ -68,7 +68,13 @@ void assert_err(uint32_t condition, char *err_msg);
 
 #define VQ_NOISE_LVL_TH 15000
 #define VQ_STABILITY_ME_VAR_TH 750
-
+#if OPT_VQ_MODE
+#if FIX_VQ_MODE_TF
+#define VQ_PIC_AVG_VARIANCE_TH 1000
+#else
+#define VQ_PIC_AVG_VARIANCE_TH 500
+#endif
+#endif
 typedef struct SharpnessCtrls {
     uint8_t scene_transition;
     uint8_t tf;
@@ -76,6 +82,9 @@ typedef struct SharpnessCtrls {
     uint8_t ifs;
     uint8_t cdef;
     uint8_t restoration;
+#if FIX_VQ_MODE_RDOQ
+    uint8_t rdoq;
+#endif
 } SharpnessCtrls;
 
 typedef struct StabilityCtrls {
@@ -553,6 +562,7 @@ typedef struct IntraSize {
 
 //*********************************************************************************************************************//
 // enums.h
+#if !CLN_DEFINITIONS
 /*!\brief Decorator indicating that given struct/union/enum is packed */
 #ifndef ATTRIBUTE_PACKED
 #if defined(__GNUC__) && __GNUC__
@@ -561,6 +571,7 @@ typedef struct IntraSize {
 #define ATTRIBUTE_PACKED
 #endif
 #endif /* ATTRIBUTE_PACKED */
+#endif
 typedef enum PdPass {
     PD_PASS_0,
     PD_PASS_1,
@@ -1180,8 +1191,9 @@ typedef struct {
     // Temp buffer used for inter prediction
     uint8_t *seg_mask;
 } InterInterCompoundData;
-
+#if !CLN_CAND_TYPES
 #define InterIntraMode InterIntraMode
+#endif
 typedef enum ATTRIBUTE_PACKED {
     FILTER_DC_PRED,
     FILTER_V_PRED,
@@ -1248,6 +1260,43 @@ static const PredictionMode fimode_to_intramode[FILTER_INTRA_MODES] = {
 typedef uint8_t TXFM_CONTEXT;
 
 // frame types
+#if CLN_DEFINITIONS
+enum {
+    NONE_FRAME = -1,
+    INTRA_FRAME,
+    LAST_FRAME,
+    LAST2_FRAME,
+    LAST3_FRAME,
+    GOLDEN_FRAME,
+    BWDREF_FRAME,
+    ALTREF2_FRAME,
+    ALTREF_FRAME,
+    REF_FRAMES,
+
+    // Extra/scratch reference frame. It may be:
+    // - used to update the ALTREF2_FRAME ref (see lshift_bwd_ref_frames()), or
+    // - updated from ALTREF2_FRAME ref (see rshift_bwd_ref_frames()).
+    EXTREF_FRAME = REF_FRAMES,
+
+    // Number of inter (non-intra) reference types.
+    INTER_REFS_PER_FRAME = ALTREF_FRAME - LAST_FRAME + 1,
+
+    TOTAL_REFS_PER_FRAME = ALTREF_FRAME - INTRA_FRAME + 1,
+
+    // Number of forward (aka past) reference types.
+    FWD_REFS = GOLDEN_FRAME - LAST_FRAME + 1,
+
+    // Number of backward (aka future) reference types.
+    BWD_REFS = ALTREF_FRAME - BWDREF_FRAME + 1,
+
+    SINGLE_REFS = FWD_REFS + BWD_REFS,
+};
+
+#define REFS_PER_FRAME 7
+
+#define FWD_RF_OFFSET(ref) (ref - LAST_FRAME)
+#define BWD_RF_OFFSET(ref) (ref - BWDREF_FRAME)
+#else
 #define NONE_FRAME -1
 #define INTRA_FRAME 0
 #define LAST_FRAME 1
@@ -1269,7 +1318,7 @@ typedef uint8_t TXFM_CONTEXT;
 #define BWD_RF_OFFSET(ref) (ref - BWDREF_FRAME)
 
 #define SINGLE_REFS (FWD_REFS + BWD_REFS)
-
+#endif
 typedef enum ATTRIBUTE_PACKED {
     LAST_LAST2_FRAMES, // { LAST_FRAME, LAST2_FRAME }
     LAST_LAST3_FRAMES, // { LAST_FRAME, LAST3_FRAME }
@@ -1743,7 +1792,14 @@ static INLINE int32_t get_ext_tx_set(TxSize tx_size, int32_t is_inter, int32_t u
     const TxSetType set_type = get_ext_tx_set_type(tx_size, is_inter, use_reduced_set);
     return ext_tx_set_index[is_inter][set_type];
 }
-
+#if CLN_REMOVE_REDUND_4
+static INLINE Bool is_intra_mode(PredictionMode mode) {
+    return mode < INTRA_MODE_END;// && mode >= INTRA_MODE_START; // mode is always greater than INTRA_MODE_START
+}
+static INLINE Bool is_inter_mode(PredictionMode mode) {
+    return mode >= SINGLE_INTER_MODE_START && mode < COMP_INTER_MODE_END;
+}
+#endif
 static INLINE int32_t is_inter_compound_mode(PredictionMode mode) {
     return mode >= NEAREST_NEARESTMV && mode <= NEW_NEWMV;
 }
@@ -1785,6 +1841,7 @@ typedef enum FrameContextIndex {
 // Total number of QM sets stored
 #define QM_LEVEL_BITS 4
 #define NUM_QM_LEVELS (1 << QM_LEVEL_BITS)
+#if !CLN_DEFINITIONS
 /* Range of QMS is between first and last value, with offset applied to inter
 * blocks*/
 #define DEFAULT_QM_Y 10
@@ -1792,7 +1849,7 @@ typedef enum FrameContextIndex {
 #define DEFAULT_QM_V 12
 #define DEFAULT_QM_FIRST 5
 #define DEFAULT_QM_LAST 9
-
+#endif
 //**********************************************************************************************************************//
 // blockd.h
 #define NO_FILTER_FOR_IBC 1 // Disable in-loop filters for frame with intrabc
@@ -1840,7 +1897,10 @@ typedef struct LoopFilterInfoN {
     LoopFilterThresh lfthr[MAX_LOOP_FILTER + 1];
     uint8_t          lvl[MAX_MB_PLANE][MAX_SEGMENTS][2][REF_FRAMES][MAX_MODE_LF_DELTAS];
 } LoopFilterInfoN;
-
+#if CLN_DEFINITIONS
+#define CDEF_PRI_STRENGTHS 16
+#define CDEF_SEC_STRENGTHS 4
+#else
 //**********************************************************************************************************************//
 // cdef.h
 typedef enum {
@@ -1894,7 +1954,7 @@ static INLINE void get_cdef_filter_strengths(CDEF_PICK_METHOD pick_method, int *
     default: assert(0 && "Invalid CDEF search method");
     }
 }
-
+#endif
 // Bits of precision used for the model
 #define WARPEDMODEL_PREC_BITS 16
 // The following constants describe the various precisions
@@ -2102,20 +2162,43 @@ typedef enum MD_BIT_DEPTH_MODE
     EB_DUAL_BIT_MD  = 2     // Auto: 8bit & 10bit mode decision
 } MD_BIT_DEPTH_MODE;
 
+#if CLN_DEFINITIONS
 /** The EB_GOP type is used to describe the hierarchical coding structure of
 Groups of Pictures (GOP) units.
 */
-#define EbPred                 uint8_t
-#define EB_PRED_LOW_DELAY_P     0
-#define EB_PRED_LOW_DELAY_B     1
-#define EB_PRED_RANDOM_ACCESS   2
-#define EB_PRED_TOTAL_COUNT     3
-#define EB_PRED_INVALID         0xFF
+typedef enum ATTRIBUTE_PACKED {
+    PRED_LOW_DELAY_P = 0,
+    PRED_LOW_DELAY_B = 1,
+    PRED_RANDOM_ACCESS = 2,
+    PRED_TOTAL_COUNT = 3,
+    PRED_INVALID = 0xFF
+} PredStructure;
 
-/** The EB_SLICE type is used to describe the slice prediction type.
+/*
+ * The SliceType type is used to describe the slice prediction type.
+ */
+typedef enum ATTRIBUTE_PACKED {
+    B_SLICE = 0,
+    P_SLICE = 1,
+    I_SLICE = 2,
+    IDR_SLICE = 3,
+    INVALID_SLICE = 0xFF
+} SliceType;
+#else
+/** The EB_GOP type is used to describe the hierarchical coding structure of
+Groups of Pictures (GOP) units.
+*/
+#define PredStructure                 uint8_t
+#define PRED_LOW_DELAY_P     0
+#define PRED_LOW_DELAY_B     1
+#define PRED_RANDOM_ACCESS   2
+#define PRED_TOTAL_COUNT     3
+#define PRED_INVALID         0xFF
+
+/** The SliceType type is used to describe the slice prediction type.
 */
 
-#define EB_SLICE        uint8_t
+#define SliceType        uint8_t
 #define B_SLICE         0
 #define P_SLICE         1
 #define I_SLICE         2
@@ -2128,6 +2211,7 @@ Groups of Pictures (GOP) units.
 #define PROGRESSIVE_PICT_STRUCT  0
 #define TOP_FIELD_PICT_STRUCT    1
 #define BOTTOM_FIELD_PICT_STRUCT 2
+#endif
 
 /** The EbModeType type is used to describe the PU type.
 */
@@ -2136,7 +2220,7 @@ typedef uint8_t EbModeType;
 #define INTRA_MODE 2
 
 #define INVALID_MODE 0xFFu
-
+#if !CLN_DEFINITIONS
 /** The EbPartMode type is used to describe the CU partition size.
 */
 typedef uint8_t EbPartMode;
@@ -2158,11 +2242,12 @@ typedef uint8_t EbPartMode;
 #define SIZE_2NxnD_PARTITION_MASK   (1 << SIZE_2NxnD)
 #define SIZE_nLx2N_PARTITION_MASK   (1 << SIZE_nLx2N)
 #define SIZE_nRx2N_PARTITION_MASK   (1 << SIZE_nRx2N)
-
-/** The EbEncMode type is used to describe the encoder mode .
+#endif
+#if !CLN_DEFINITIONS
+/** The EncMode type is used to describe the encoder mode .
 */
 
-#define EbEncMode     int8_t
+#define EncMode     int8_t
 #define ENC_MRS         -2 // Highest quality research mode (slowest)
 #define ENC_MR          -1 //Research mode with higher quality than M0
 #define ENC_M0          0
@@ -2181,8 +2266,9 @@ typedef uint8_t EbPartMode;
 #define ENC_M13         13
 
 #define MAX_SUPPORTED_MODES 16
-
+#endif
 #define SPEED_CONTROL_INIT_MOD ENC_M4;
+#if !CLN_DEFINITIONS
 /** The EB_TUID type is used to identify a TU within a CU.
 */
 typedef enum EbTuSize
@@ -2208,14 +2294,30 @@ typedef enum EbTuSize
 #define TU_N2xN2_1_PARTITION_MASK   (1 << TU_N2xN2_1)
 #define TU_N2xN2_2_PARTITION_MASK   (1 << TU_N2xN2_2)
 #define TU_N2xN2_3_PARTITION_MASK   (1 << TU_N2xN2_3)
+#endif
+#if CLN_DEFINITIONS
+typedef enum ATTRIBUTE_PACKED {
+    REF_LIST_0 = 0,
+    REF_LIST_1 = 1,
+    TOTAL_NUM_OF_REF_LISTS = 2,
+    INVALID_LIST = 0xFF
+} RefList;
 
-#define EbReflist            uint8_t
+typedef enum ATTRIBUTE_PACKED {
+    UNI_PRED_LIST_0 = 0,
+    UNI_PRED_LIST_1 = 1,
+    BI_PRED = 2,
+    EB_PREDDIRECTION_TOTAL = 3,
+    INVALID_PRED_DIRECTION = 0xFF
+} PredDirection;
+#else
+#define RefList            uint8_t
 #define REF_LIST_0             0
 #define REF_LIST_1             1
 #define TOTAL_NUM_OF_REF_LISTS 2
 #define INVALID_LIST           0xFF
 
-#define EbPredDirection         uint8_t
+#define PredDirection         uint8_t
 #define UNI_PRED_LIST_0          0
 #define UNI_PRED_LIST_1          1
 #define BI_PRED                  2
@@ -2233,6 +2335,7 @@ typedef enum EbTuSize
 #define EB_FRAME_CARAC_2           2
 #define EB_FRAME_CARAC_3           3
 #define EB_FRAME_CARAC_4           4
+#endif
 
 #define  MAX_PAL_CAND   14
 
@@ -2278,11 +2381,13 @@ typedef EbErrorType(*EbCreator)(
     EbPtr object_init_data_ptr);
 
 #define INVALID_MV            0x80008000 //0xFFFFFFFF    //ICOPY They changed this to 0x80008000
+#if !CLN_DEFINITIONS
 #define BLKSIZE 64
-
+#endif
 /***************************************
 * Generic linked list data structure for passing data into/out from the library
 ***************************************/
+#if !CLN_DEFINITIONS
 // Reserved types for lib's internal use. Must be less than EB_EXT_TYPE_BASE
 #define       EB_TYPE_PIC_TIMING_SEI         0
 #define       EB_TYPE_BUFFERING_PERIOD_SEI   1
@@ -2294,7 +2399,7 @@ typedef EbErrorType(*EbCreator)(
 
 #define       EB_TYPE_HIERARCHICAL_LEVELS  100
 #define       EB_TYPE_PRED_STRUCTURE       101
-
+#endif
 typedef int32_t EbLinkedListType;
 
 typedef struct EbLinkedListNode
@@ -2304,7 +2409,7 @@ typedef struct EbLinkedListNode
                                                             // release_cb_fnc_ptr may need to access it.
     EbLinkedListType       type;                      // type of data pointed by "data" member variable
     uint32_t                    size;                      // size of (data)
-    EbBool                   passthrough;               // whether this is passthrough data from application
+    Bool                   passthrough;               // whether this is passthrough data from application
     void(*release_cb_fnc_ptr)(struct EbLinkedListNode*); // callback to be executed by encoder when picture reaches end of pipeline, or
                                                         // when aborting. However, at end of pipeline encoder shall
                                                         // NOT invoke this callback if passthrough is TRUE (but
@@ -2474,6 +2579,7 @@ typedef enum DownSamplingMethod
 
 #define MIN_QP_VALUE                     0
 #define MAX_QP_VALUE                    63
+#if !CLN_DEFINITIONS
 #define MAX_CHROMA_MAP_QP_VALUE         63
 
 //***Transforms***
@@ -2576,9 +2682,10 @@ typedef enum DownSamplingMethod
 
 #define  BI_SHIFT2D2_10BIT      6
 #define  BI_OFFSET2D2_10BIT     0
-
+#endif
 // Noise detection
 #define  NOISE_VARIANCE_TH                390
+#if !CLN_DEFINITIONS
 // Intrinisc
 #define INTRINSIC_SSE2                                1
 
@@ -2637,7 +2744,7 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define NON_MOVING_SCORE_2    20
 #define NON_MOVING_SCORE_3    30
 #define INVALID_NON_MOVING_SCORE (uint8_t) ~0
-
+#endif
 // Picture split into regions for analysis (SCD, Dynamic GOP)
 #define CLASS_SUB_0_REGION_SPLIT_PER_WIDTH    1
 #define CLASS_SUB_0_REGION_SPLIT_PER_HEIGHT    1
@@ -2647,7 +2754,7 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 
 #define HIGHER_THAN_CLASS_1_REGION_SPLIT_PER_WIDTH        4
 #define HIGHER_THAN_CLASS_1_REGION_SPLIT_PER_HEIGHT        4
-
+#if !CLN_DEFINITIONS
 // Dynamic GOP activity TH - to tune
 
 #define DYNAMIC_GOP_SUB_1080P_L6_VS_L5_COST_TH        11
@@ -2668,7 +2775,6 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define MAX_SUPPORTED_SEGMENTS                            7
 #define NUM_QPS                                           52
 
-
 // Aura detection definitions
 #define    AURA_4K_DISTORTION_TH    25
 #define    AURA_4K_DISTORTION_TH_6L 20
@@ -2678,7 +2784,7 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define PRED_ERROR_CLASS_0          0
 #define PRED_ERROR_CLASS_1          1
 #define INVALID_PRED_ERROR_CLASS    128
-
+#endif
 #define EbScdMode uint8_t
 #define SCD_MODE_0  0     // SCD OFF
 #define SCD_MODE_1   1     // Light SCD (histograms generation on the 1/16 decimated input)
@@ -2687,7 +2793,7 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define EbBlockMeanPrec uint8_t
 #define BLOCK_MEAN_PREC_FULL 0
 #define BLOCK_MEAN_PREC_SUB  1
-
+#if !CLN_DEFINITIONS
 #define EbPmMode uint8_t
 #define PM_MODE_0  0     // 1-stage PM
 #define PM_MODE_1  1     // 2-stage PM 4K
@@ -2696,14 +2802,29 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define EB_ZZ_SAD_MODE uint8_t
 #define ZZ_SAD_MODE_0  0        // ZZ SAD on Decimated resolution
 #define ZZ_SAD_MODE_1  1        // ZZ SAD on Full resolution
-
+#endif
+#if !CLN_MD_CTX
 #define EbPfMode uint8_t
 #define PF_OFF  0
 #define PF_N2   1
 #define PF_N4   2
+#endif
 #define STAGE uint8_t
 #define ED_STAGE  1      // ENCDEC stage
+#if CLN_DEFINITIONS
+typedef enum {
+    DEFAULT_SHAPE = 0,
+    N2_SHAPE      = 1,
+    N4_SHAPE      = 2,
+    ONLY_DC_SHAPE = 3
+}EB_TRANS_COEFF_SHAPE;
 
+typedef enum {
+    CHROMA_MODE_0 = 0, // Full chroma search @ MD
+    CHROMA_MODE_1 = 1, // Fast chroma search @ MD
+    CHROMA_MODE_2 = 2  // Chroma blind @ MD
+}ChromaLevel;
+#else
 #define EB_TRANS_COEFF_SHAPE uint8_t
 #define DEFAULT_SHAPE 0
 #define N2_SHAPE      1
@@ -2714,6 +2835,7 @@ static const uint8_t intra_area_th_class_1[MAX_HIERARCHICAL_LEVEL][MAX_TEMPORAL_
 #define CHROMA_MODE_0  0 // Full chroma search @ MD
 #define CHROMA_MODE_1  1 // Fast chroma search @ MD
 #define CHROMA_MODE_2  2 // Chroma blind @ MD
+#endif
 
 // Multi-Pass Partitioning Depth(Multi - Pass PD) performs multiple PD stages for the same SB towards 1 final Partitioning Structure
 // As we go from PDn to PDn + 1, the prediction accuracy of the MD feature(s) increases while the number of block(s) decreases
@@ -2723,6 +2845,7 @@ typedef enum MultiPassPdLevel
     MULTI_PASS_PD_ON      = 1, // Multi-Pass PD ON  = PD0 | PD0_REFINEMENT | PD1
     MULTI_PASS_PD_INVALID = 0, // Invalid Multi-Pass PD Mode
 } MultiPassPdLevel;
+#if !CLN_MD_CTX
 #define EB_SB_DEPTH_MODE              uint8_t
 #define SB_SQ_BLOCKS_DEPTH_MODE             1
 #define SB_SQ_NON4_BLOCKS_DEPTH_MODE        2
@@ -2752,7 +2875,7 @@ static const int32_t hme_level_0_search_area_multiplier_y[MAX_HIERARCHICAL_LEVEL
     { 350, 200, 100, 100, 100 },
     { 525, 350, 200, 100, 100, 100 }
 };
-
+#endif
 typedef enum RasterScanCuIndex
 {
     // 2Nx2N [85 partitions]
@@ -2941,7 +3064,7 @@ static const uint32_t raster_scan_blk_parent_index[CU_MAX_COUNT] =
     17, 17, 18, 18, 19, 19, 20, 20,
     17, 17, 18, 18, 19, 19, 20, 20
 };
-
+#if !CLN_DEFINITIONS
 #define UNCOMPRESS_SAD(x) ( ((x) & 0x1FFF)<<(((x)>>13) & 7) )
 
 static const uint32_t md_scan_to_ois_32x32_scan[CU_MAX_COUNT] =
@@ -3032,6 +3155,7 @@ static const uint32_t md_scan_to_ois_32x32_scan[CU_MAX_COUNT] =
     /*83 */3,
     /*84 */3,
 };
+#endif
 typedef struct StatStruct
 {
     uint64_t   poc;
@@ -3041,13 +3165,14 @@ typedef struct StatStruct
     uint8_t    temporal_layer_index;
 } StatStruct;
 #define SC_MAX_LEVEL 2 // 2 sets of HME/ME settings are used depending on the scene content mode
-
+#if !CLN_MD_CTX
 typedef enum HmeDecimation
 {
     ZERO_DECIMATION_HME = 0, // Perform HME search on full-res picture; no refinement
     ONE_DECIMATION_HME = 1, // HME search on quarter-res picture; 1 refinement level
     TWO_DECIMATION_HME = 2, // HME search on sixteenth-res picture; 2 refinement level
 } HmeDecimation;
+#endif
 static const uint8_t me_idx_85_8x8_to_16x16_conversion[] = {
     5,5,      6,6,      7,7,      8,8,
     5,5,      6,6,      7,7,      8,8,

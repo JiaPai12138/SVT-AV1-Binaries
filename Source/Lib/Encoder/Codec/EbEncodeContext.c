@@ -31,12 +31,10 @@ static EbErrorType create_stats_buffer(FIRSTPASS_STATS **frame_stats_buffer,
     stats_buf_context->stats_in_end       = stats_buf_context->stats_in_start;
     stats_buf_context->stats_in_buf_end   = stats_buf_context->stats_in_start + size;
 
-    // stats_buf_context->total_left_stats = aom_calloc(1, sizeof(FIRSTPASS_STATS));
     EB_MALLOC_ARRAY(stats_buf_context->total_left_stats, 1);
     if (stats_buf_context->total_left_stats == NULL)
         return EB_ErrorInsufficientResources;
     svt_av1_twopass_zero_stats(stats_buf_context->total_left_stats);
-    // stats_buf_context->total_stats = aom_calloc(1, sizeof(FIRSTPASS_STATS));
     EB_MALLOC_ARRAY(stats_buf_context->total_stats, 1);
     if (stats_buf_context->total_stats == NULL)
         return EB_ErrorInsufficientResources;
@@ -143,13 +141,13 @@ EbErrorType encode_context_ctor(EncodeContext *encode_context_ptr, EbPtr object_
                picture_index);
     }
 
-    encode_context_ptr->initial_picture = EB_TRUE;
+    encode_context_ptr->initial_picture = TRUE;
 
     // Sequence Termination Flags
     encode_context_ptr->terminating_picture_number = ~0u;
 
     // Signalling the need for a td structure to be written in the Bitstream - on when the sequence starts
-    encode_context_ptr->td_needed = EB_TRUE;
+    encode_context_ptr->td_needed = TRUE;
 
     EB_CREATE_MUTEX(encode_context_ptr->sc_buffer_mutex);
     encode_context_ptr->enc_mode                      = SPEED_CONTROL_INIT_MOD;

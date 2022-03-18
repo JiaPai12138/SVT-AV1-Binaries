@@ -1213,7 +1213,7 @@ void generate_av1_mvp_table(ModeDecisionContext *context_ptr, BlkStruct *blk_ptr
     uint8_t symteric_refs = 0;
     IntMv   mv_ref0[64];
     if (pcs_ptr->temporal_layer_index > 0)
-        if (pcs_ptr->parent_pcs_ptr->scs_ptr->static_config.pred_structure == EB_PRED_RANDOM_ACCESS)
+        if (pcs_ptr->parent_pcs_ptr->scs_ptr->static_config.pred_structure == PRED_RANDOM_ACCESS)
             if (tot_refs == 3 && ref_frames[0] == LAST_FRAME && ref_frames[1] == BWDREF_FRAME &&
                 ref_frames[2] == LAST_BWD_FRAME)
                 symteric_refs = 1;
@@ -1369,8 +1369,12 @@ void get_av1_mv_pred_drl(ModeDecisionContext *context_ptr, BlkStruct *blk_ptr,
 void update_mi_map_enc_dec(BlkStruct *blk_ptr, ModeDecisionContext *md_ctx) {
     // Update only the data in the top left block of the partition, because all other mi_blocks
     // point to the top left mi block of the partition
-    blk_ptr->av1xd->mi[0]->mbmi.block_mi.skip      = blk_ptr->block_has_coeff ? EB_FALSE : EB_TRUE;
+    blk_ptr->av1xd->mi[0]->mbmi.block_mi.skip      = blk_ptr->block_has_coeff ? FALSE : TRUE;
+#if CLN_SKIP_NAMING
+    blk_ptr->av1xd->mi[0]->mbmi.block_mi.skip_mode = (int8_t)blk_ptr->skip_mode;
+#else
     blk_ptr->av1xd->mi[0]->mbmi.block_mi.skip_mode = (int8_t)blk_ptr->skip_flag;
+#endif
 
     // update palette_colors mi map when input bit depth is 10bit and hbd mode decision is 0 (8bit MD)
     // palette_colors were scaled to 10bit in av1_encode_decode so here we need to update mi map for entropy coding
@@ -1452,9 +1456,13 @@ void update_mi_map(BlkStruct *blk_ptr, uint32_t blk_origin_x, uint32_t blk_origi
              ? BLOCK_4X4
              : blk_geom->bsize;
     block_mi->mode         = blk_ptr->pred_mode;
-    block_mi->skip         = (blk_ptr->block_has_coeff) ? EB_FALSE : EB_TRUE;
+    block_mi->skip         = (blk_ptr->block_has_coeff) ? FALSE : TRUE;
     block_mi->partition    = from_shape_to_part[blk_geom->shape];
+#if CLN_SKIP_NAMING
+    block_mi->skip_mode    = (int8_t)blk_ptr->skip_mode;
+#else
     block_mi->skip_mode    = (int8_t)blk_ptr->skip_flag;
+#endif
     block_mi->uv_mode      = blk_ptr->prediction_unit_array->intra_chroma_mode;
     block_mi->use_intrabc  = blk_ptr->use_intrabc;
     block_mi->ref_frame[0] = rf[0];
@@ -1782,13 +1790,13 @@ uint16_t wm_find_samples(BlkStruct *blk_ptr, const BlockGeom *blk_geom, uint16_t
         pts_inref);
 }
 
-EbBool warped_motion_parameters(PictureControlSet *pcs_ptr, BlkStruct *blk_ptr, MvUnit *mv_unit,
+Bool warped_motion_parameters(PictureControlSet *pcs_ptr, BlkStruct *blk_ptr, MvUnit *mv_unit,
                                 const BlockGeom *blk_geom, uint16_t blk_origin_x,
                                 uint16_t blk_origin_y, uint8_t ref_frame_type,
                                 EbWarpedMotionParams *wm_params, uint16_t *num_samples) {
     MacroBlockD *xd       = blk_ptr->av1xd;
     BlockSize    bsize    = blk_geom->bsize;
-    EbBool       apply_wm = EB_FALSE;
+    Bool       apply_wm = FALSE;
 
     int     pts[SAMPLES_ARRAY_SIZE], pts_inref[SAMPLES_ARRAY_SIZE];
     int32_t mi_row = blk_origin_y >> MI_SIZE_LOG2;

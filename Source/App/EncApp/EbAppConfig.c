@@ -64,6 +64,11 @@
 #define KEY_FRAME_QINDEX_OFFSET_TOKEN "--key-frame-qindex-offset"
 #define KEY_FRAME_CHROMA_QINDEX_OFFSET_TOKEN "--key-frame-chroma-qindex-offset"
 #define CHROMA_QINDEX_OFFSETS_TOKEN "--chroma-qindex-offsets"
+#define LUMA_Y_DC_QINDEX_OFFSET_TOKEN "--luma-y-dc-qindex-offset"
+#define CHROMA_U_DC_QINDEX_OFFSET_TOKEN "--chroma-u-dc-qindex-offset"
+#define CHROMA_U_AC_QINDEX_OFFSET_TOKEN "--chroma-u-ac-qindex-offset"
+#define CHROMA_V_DC_QINDEX_OFFSET_TOKEN "--chroma-v-dc-qindex-offset"
+#define CHROMA_V_AC_QINDEX_OFFSET_TOKEN "--chroma-v-ac-qindex-offset"
 
 #define FRAME_RATE_TOKEN "--fps"
 #define FRAME_RATE_NUMERATOR_TOKEN "--fps-num"
@@ -167,7 +172,7 @@
 #define COLOR_RANGE_NEW_TOKEN "--color-range"
 #define MASTERING_DISPLAY_TOKEN "--mastering-display"
 #define CONTENT_LIGHT_LEVEL_TOKEN "--content-light"
-
+#if !CLN_DEFINITIONS
 #define ENC_MRS -2 // Highest quality research mode (slowest)
 #define ENC_MR -1 //Research mode with higher quality than M0
 #define ENC_M0 0
@@ -184,32 +189,33 @@
 #define ENC_M11 11
 #define ENC_M12 12
 #define ENC_M13 13
+#endif
 #ifdef _WIN32
 static HANDLE get_file_handle(FILE *fp) { return (HANDLE)_get_osfhandle(_fileno(fp)); }
 #endif
 
-static EbBool fopen_and_lock(FILE **file, const char *name, EbBool write) {
+static Bool fopen_and_lock(FILE **file, const char *name, Bool write) {
     if (!file || !name)
-        return EB_FALSE;
+        return FALSE;
 
     const char *mode = write ? "wb" : "rb";
     FOPEN(*file, name, mode);
     if (!*file)
-        return EB_FALSE;
+        return FALSE;
 
 #ifdef _WIN32
     HANDLE handle = get_file_handle(*file);
     if (handle == INVALID_HANDLE_VALUE)
-        return EB_FALSE;
+        return FALSE;
     if (LockFile(handle, 0, 0, MAXDWORD, MAXDWORD))
-        return EB_TRUE;
+        return TRUE;
 #else
     int fd = fileno(*file);
     if (flock(fd, LOCK_EX | LOCK_NB) == 0)
-        return EB_TRUE;
+        return TRUE;
 #endif
     fprintf(stderr, "ERROR: locking %s failed, is it used by other encoder?\n", name);
-    return EB_FALSE;
+    return FALSE;
 }
 
 /**********************************
@@ -226,7 +232,7 @@ static void set_cfg_input_file(const char *filename, EbConfig *cfg) {
 
     if (!strcmp(filename, "stdin")) {
         cfg->input_file         = stdin;
-        cfg->input_file_is_fifo = EB_TRUE;
+        cfg->input_file_is_fifo = TRUE;
     } else
         FOPEN(cfg->input_file, filename, "rb");
 
@@ -258,7 +264,7 @@ static void set_pred_struct_file(const char *value, EbConfig *cfg) {
 #else
     cfg->input_pred_struct_filename = _strdup(value);
 #endif
-    cfg->config.enable_manual_pred_struct = EB_TRUE;
+    cfg->config.enable_manual_pred_struct = TRUE;
 }
 
 static void set_cfg_stream_file(const char *value, EbConfig *cfg) {
@@ -464,11 +470,11 @@ static void set_cfg_crf(const char *value, EbConfig *cfg) {
     cfg->config.enable_tpl_la     = 1;
 }
 static void set_cfg_use_qp_file(const char *value, EbConfig *cfg) {
-    cfg->config.use_qp_file = (EbBool)strtol(value, NULL, 0);
+    cfg->config.use_qp_file = (Bool)strtol(value, NULL, 0);
 };
 
 static void set_cfg_use_fixed_qindex_offsets(const char *value, EbConfig *cfg) {
-    cfg->config.use_fixed_qindex_offsets = (EbBool)strtol(value, NULL, 0);
+    cfg->config.use_fixed_qindex_offsets = (Bool)strtol(value, NULL, 0);
 }
 
 static void set_cfg_key_frame_qindex_offset(const char *value, EbConfig *cfg) {
@@ -477,6 +483,26 @@ static void set_cfg_key_frame_qindex_offset(const char *value, EbConfig *cfg) {
 
 static void set_cfg_key_frame_chroma_qindex_offset(const char *value, EbConfig *cfg) {
     cfg->config.key_frame_chroma_qindex_offset = (int32_t)strtol(value, NULL, 0);
+}
+
+static void set_cfg_luma_y_dc_qindex_offset(const char *value, EbConfig *cfg) {
+  cfg->config.luma_y_dc_qindex_offset = (int32_t)strtol(value, NULL, 0);
+}
+
+static void set_cfg_chroma_u_dc_qindex_offset(const char *value, EbConfig *cfg) {
+  cfg->config.chroma_u_dc_qindex_offset = (int32_t)strtol(value, NULL, 0);
+}
+
+static void set_cfg_chroma_u_ac_qindex_offset(const char *value, EbConfig *cfg) {
+  cfg->config.chroma_u_ac_qindex_offset = (int32_t)strtol(value, NULL, 0);
+}
+
+static void set_cfg_chroma_v_dc_qindex_offset(const char *value, EbConfig *cfg) {
+  cfg->config.chroma_v_dc_qindex_offset = (int32_t)strtol(value, NULL, 0);
+}
+
+static void set_cfg_chroma_v_ac_qindex_offset(const char *value, EbConfig *cfg) {
+  cfg->config.chroma_v_ac_qindex_offset = (int32_t)strtol(value, NULL, 0);
 }
 
 //assume the input list of values are in the format of "[v1,v2,v3,...]"
@@ -604,7 +630,7 @@ static void set_recode_loop(const char *value, EbConfig *cfg) {
     cfg->config.recode_loop = strtoul(value, NULL, 0);
 };
 static void set_adaptive_quantization(const char *value, EbConfig *cfg) {
-    cfg->config.enable_adaptive_quantization = (EbBool)strtol(value, NULL, 0);
+    cfg->config.enable_adaptive_quantization = (Bool)strtol(value, NULL, 0);
 };
 static void set_screen_content_mode(const char *value, EbConfig *cfg) {
     cfg->config.screen_content_mode = strtoul(value, NULL, 0);
@@ -615,11 +641,11 @@ static void set_enable_tf(const char *value, EbConfig *cfg) {
 };
 
 static void set_enable_overlays(const char *value, EbConfig *cfg) {
-    cfg->config.enable_overlays = (EbBool)strtoul(value, NULL, 0);
+    cfg->config.enable_overlays = (Bool)strtoul(value, NULL, 0);
 };
 
 static void set_tune(const char *value, EbConfig *cfg) {
-    cfg->config.tune = (EbBool)strtoul(value, NULL, 0);
+    cfg->config.tune = (Bool)strtoul(value, NULL, 0);
 };
 // --- end: ALTREF_FILTERING_SUPPORT
 // --- start: SUPER-RESOLUTION SUPPORT
@@ -1014,7 +1040,26 @@ ConfigEntry config_entry_rc[] = {
      "list of chroma Q index offsets per hierarchical layer, separated by `,` with each offset in "
      "the range of [-256-255], default is `0,0,..,0`",
      set_cfg_chroma_qindex_offsets},
-
+    {SINGLE_INPUT,
+     LUMA_Y_DC_QINDEX_OFFSET_TOKEN,
+     "Luma Y DC Qindex Offset",
+     set_cfg_luma_y_dc_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_U_DC_QINDEX_OFFSET_TOKEN,
+     "Chroma U DC Qindex Offset",
+     set_cfg_chroma_u_dc_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_U_AC_QINDEX_OFFSET_TOKEN,
+     "Chroma U AC Qindex Offset",
+     set_cfg_chroma_u_ac_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_V_DC_QINDEX_OFFSET_TOKEN,
+     "Chroma V DC Qindex Offset",
+     set_cfg_chroma_v_dc_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_V_AC_QINDEX_OFFSET_TOKEN,
+     "Chroma V AC Qindex Offset",
+     set_cfg_chroma_v_ac_qindex_offset},
     {SINGLE_INPUT,
      UNDER_SHOOT_PCT_TOKEN,
      "Allowable datarate undershoot (min) target (percentage), default is 25, but can change based "
@@ -1146,10 +1191,17 @@ ConfigEntry config_entry_specific[] = {
      MFMV_ENABLE_NEW_TOKEN,
      "Motion Field Motion Vector control, default is -1 [-1: auto, 0-1]",
      set_enable_mfmv_flag},
+#if TUNE_FAST_DECODE
+    {SINGLE_INPUT,
+     FAST_DECODE_TOKEN,
+     "Fast Decoder levels, default is 0 [0-4]",
+     set_fast_decode_flag},
+#else
     {SINGLE_INPUT,
      FAST_DECODE_TOKEN,
      "Fast Decoder levels, default is 0 [0-3]",
      set_fast_decode_flag},
+#endif
     // --- start: ALTREF_FILTERING_SUPPORT
     {SINGLE_INPUT,
      ENABLE_TF_TOKEN,
@@ -1347,7 +1399,26 @@ ConfigEntry config_entry[] = {
      CHROMA_QINDEX_OFFSETS_TOKEN,
      "ChromaQIndexOffsets",
      set_cfg_chroma_qindex_offsets},
-
+    {SINGLE_INPUT,
+     LUMA_Y_DC_QINDEX_OFFSET_TOKEN,
+     "LumaYDCQindexOffset",
+     set_cfg_luma_y_dc_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_U_DC_QINDEX_OFFSET_TOKEN,
+     "ChromaUDCQindexOffset",
+     set_cfg_chroma_u_dc_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_U_AC_QINDEX_OFFSET_TOKEN,
+     "ChromaUACQindexOffset",
+     set_cfg_chroma_u_ac_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_V_DC_QINDEX_OFFSET_TOKEN,
+     "ChromaVDCQindexOffset",
+     set_cfg_chroma_v_dc_qindex_offset},
+    {SINGLE_INPUT,
+     CHROMA_V_AC_QINDEX_OFFSET_TOKEN,
+     "ChromaVACQindexOffset",
+     set_cfg_chroma_v_ac_qindex_offset},
     {SINGLE_INPUT, UNDER_SHOOT_PCT_TOKEN, "UnderShootPct", set_under_shoot_pct},
     {SINGLE_INPUT, OVER_SHOOT_PCT_TOKEN, "OverShootPct", set_over_shoot_pct},
     {SINGLE_INPUT, BUFFER_SIZE_TOKEN, "BufSz", set_buf_sz},
@@ -1502,7 +1573,7 @@ EbErrorType enc_channel_ctor(EncChannel *c) {
     c->exit_cond_output = APP_ExitConditionError;
     c->exit_cond_recon  = APP_ExitConditionError;
     c->exit_cond_input  = APP_ExitConditionError;
-    c->active           = EB_FALSE;
+    c->active           = FALSE;
     return svt_av1_enc_init_handle(
         &c->app_callback->svt_encoder_handle, c->app_callback, &c->config->config);
 }
@@ -1731,7 +1802,7 @@ static int32_t read_config_file(EbConfig *config, char *config_path, uint32_t in
 }
 
 /* get config->rc_stats_buffer from config->input_stat_file */
-EbBool load_twopass_stats_in(EbConfig *cfg) {
+Bool load_twopass_stats_in(EbConfig *cfg) {
     EbSvtAv1EncConfiguration *config = &cfg->config;
 #ifdef _WIN32
     int          fd = _fileno(cfg->input_stat_file);
@@ -1743,17 +1814,17 @@ EbBool load_twopass_stats_in(EbConfig *cfg) {
     int         ret         = fstat(fd, &file_stat);
 #endif
     if (ret) {
-        return EB_FALSE;
+        return FALSE;
     }
     config->rc_stats_buffer.buf = malloc(file_stat.st_size);
     if (config->rc_stats_buffer.buf) {
         config->rc_stats_buffer.sz = (uint64_t)file_stat.st_size;
         if (fread(config->rc_stats_buffer.buf, 1, file_stat.st_size, cfg->input_stat_file) !=
             (size_t)file_stat.st_size) {
-            return EB_FALSE;
+            return FALSE;
         }
         if (file_stat.st_size == 0) {
-            return EB_FALSE;
+            return FALSE;
         }
     }
     return config->rc_stats_buffer.buf != NULL;
@@ -1764,7 +1835,7 @@ EbErrorType handle_stats_file(EbConfig *config, EncPass enc_pass,
     case ENC_SINGLE_PASS: {
         const char *stats = config->stats ? config->stats : "svtav1_2pass.log";
         if (config->config.pass == 1) {
-            if (!fopen_and_lock(&config->output_stat_file, stats, EB_TRUE)) {
+            if (!fopen_and_lock(&config->output_stat_file, stats, TRUE)) {
                 fprintf(config->error_log_file,
                         "Error instance %u: can't open stats file %s for write \n",
                         channel_number + 1,
@@ -1777,7 +1848,7 @@ EbErrorType handle_stats_file(EbConfig *config, EncPass enc_pass,
         // In this pass, data is read from the file, copied to memory, updated and
         // written back to the same file
         else if (config->config.pass == 2 && config->config.rate_control_mode == 1) {
-            if (!fopen_and_lock(&config->input_stat_file, stats, EB_FALSE)) {
+            if (!fopen_and_lock(&config->input_stat_file, stats, FALSE)) {
                 fprintf(config->error_log_file,
                         "Error instance %u: can't read stats file %s for read\n",
                         channel_number + 1,
@@ -1798,7 +1869,7 @@ EbErrorType handle_stats_file(EbConfig *config, EncPass enc_pass,
                 config->input_stat_file = (FILE *)NULL;
             }
             // Open the file in write mode
-            if (!fopen_and_lock(&config->output_stat_file, stats, EB_TRUE)) {
+            if (!fopen_and_lock(&config->output_stat_file, stats, TRUE)) {
                 fprintf(config->error_log_file,
                         "Error instance %u: can't open stats file %s for write \n",
                         channel_number + 1,
@@ -1809,7 +1880,7 @@ EbErrorType handle_stats_file(EbConfig *config, EncPass enc_pass,
         // Final pass: pass = 2 for CRF and pass = 3 for VBR
         else if ((config->config.pass == 2 && config->config.rate_control_mode == 0) ||
                  (config->config.pass == 3 && config->config.rate_control_mode == 1)) {
-            if (!fopen_and_lock(&config->input_stat_file, stats, EB_FALSE)) {
+            if (!fopen_and_lock(&config->input_stat_file, stats, FALSE)) {
                 fprintf(config->error_log_file,
                         "Error instance %u: can't read stats file %s for read\n",
                         channel_number + 1,
@@ -1831,7 +1902,7 @@ EbErrorType handle_stats_file(EbConfig *config, EncPass enc_pass,
         // for combined two passes,
         // we only ouptut first pass stats when user explicitly set the --stats
         if (config->stats) {
-            if (!fopen_and_lock(&config->output_stat_file, config->stats, EB_TRUE)) {
+            if (!fopen_and_lock(&config->output_stat_file, config->stats, TRUE)) {
                 fprintf(config->error_log_file,
                         "Error instance %u: can't open stats file %s for write \n",
                         channel_number + 1,
@@ -1907,7 +1978,7 @@ static EbErrorType app_verify_config(EbConfig *config, uint32_t channel_number) 
         return_error = EB_ErrorBadParameter;
     }
 
-    if (config->config.use_qp_file == EB_TRUE && config->qp_file == NULL) {
+    if (config->config.use_qp_file == TRUE && config->qp_file == NULL) {
         fprintf(config->error_log_file,
                 "Error instance %u: Could not find QP file, UseQpFile is set to 1\n",
                 channel_number + 1);
@@ -2159,7 +2230,7 @@ uint32_t get_number_of_channels(int32_t argc, char *const argv[]) {
     return 1;
 }
 
-static EbBool check_two_pass_conflicts(int32_t argc, char *const argv[]) {
+static Bool check_two_pass_conflicts(int32_t argc, char *const argv[]) {
     char        config_string[COMMAND_LINE_MAX_SIZE];
     const char *conflicts[] = {
         PASS_TOKEN,
@@ -2171,11 +2242,11 @@ static EbBool check_two_pass_conflicts(int32_t argc, char *const argv[]) {
         if (find_token(argc, argv, token, config_string) == 0) {
             fprintf(
                 stderr, "[SVT-Error]: --passes is not accepted in combination with %s\n", token);
-            return EB_TRUE;
+            return TRUE;
         }
         i++;
     }
-    return EB_FALSE;
+    return FALSE;
 }
 /*
 * Returns the number of passes, multi_pass_mode
@@ -2360,7 +2431,7 @@ void mark_token_as_read(const char *token, char *cmd_copy[], int32_t *cmd_token_
     }
 }
 
-static EbBool is_negative_number(const char *string) {
+static Bool is_negative_number(const char *string) {
     char *end;
     return strtol(string, &end, 10) < 0 && *end == '\0';
 }
@@ -2564,7 +2635,7 @@ static int32_t read_pred_struct_file(EbConfig *config, char *PredStructPath,
     return return_error;
 }
 
-static EbBool warn_legacy_token(const char *const token) {
+static Bool warn_legacy_token(const char *const token) {
     static struct warn_set {
         const char *old_token;
         const char *new_token;
@@ -2587,9 +2658,9 @@ static EbBool warn_legacy_token(const char *const token) {
                 "[SVT-Error]: %s has been removed, use %s instead\n",
                 tok->old_token,
                 tok->new_token);
-        return EB_TRUE;
+        return TRUE;
     }
-    return EB_FALSE;
+    return FALSE;
 }
 
 /******************************************
@@ -2601,8 +2672,10 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
     char        config_string[COMMAND_LINE_MAX_SIZE]; // for one input options
     char       *config_strings[MAX_CHANNEL_NUMBER]; // for multiple input options
     char       *cmd_copy[MAX_NUM_TOKENS]; // keep track of extra tokens
+    char       *arg_copy[MAX_NUM_TOKENS]; // keep track of extra arguments
     uint32_t    index         = 0;
     int32_t     cmd_token_cnt = 0; // total number of tokens
+    int32_t     cmd_arg_cnt = 0; // total number of arguments
     int32_t     ret_y4m;
 
     for (index = 0; index < MAX_CHANNEL_NUMBER; ++index)
@@ -2610,10 +2683,13 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
     // Copy tokens (except for CHANNEL_NUMBER_TOKEN and PASSES_TOKEN ) into a temp token buffer hosting all tokens that are passed through the command line
     size_t len = COMMAND_LINE_MAX_SIZE;
     for (int32_t token_index = 0; token_index < argc; ++token_index) {
-        if ((argv[token_index][0] == '-') &&
-            strncmp(argv[token_index], CHANNEL_NUMBER_TOKEN, len) &&
-            strncmp(argv[token_index], PASSES_TOKEN, len) && !is_negative_number(argv[token_index]))
-            cmd_copy[cmd_token_cnt++] = argv[token_index];
+        if (strncmp(argv[token_index], CHANNEL_NUMBER_TOKEN, len) &&
+            strncmp(argv[token_index], PASSES_TOKEN, len) && !is_negative_number(argv[token_index])) {
+            if (argv[token_index][0] == '-')
+                cmd_copy[cmd_token_cnt++] = argv[token_index];
+            else if (token_index)
+                arg_copy[cmd_arg_cnt++] = argv[token_index];
+        }
     }
 
     /***************************************************************************************************/
@@ -2626,6 +2702,7 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
         // Parse the config file
         for (index = 0; index < num_channels; ++index) {
             EncChannel *c   = channels + index;
+            mark_token_as_read(config_strings[index], arg_copy, &cmd_arg_cnt);
             c->return_error = (EbErrorType)read_config_file(
                 c->config, config_strings[index], index);
             return_error = (EbErrorType)(return_error & c->return_error);
@@ -2636,6 +2713,7 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
         // Parse the config file
         for (index = 0; index < num_channels; ++index) {
             EncChannel *c   = channels + index;
+            mark_token_as_read(config_strings[index], arg_copy, &cmd_arg_cnt);
             c->return_error = (EbErrorType)read_config_file(
                 c->config, config_strings[index], index);
             return_error = (EbErrorType)(return_error & c->return_error);
@@ -2679,6 +2757,8 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
         for (uint32_t chan = 0; chan < num_channels; ++chan) {
             if (!strcmp(config_strings[chan], " "))
                 break;
+            // Mark the value as found in the temp argument buffer
+            mark_token_as_read(config_strings[chan], arg_copy, &cmd_arg_cnt);
             (entry->scf)(config_strings[chan], channels[chan].config);
         }
     }
@@ -2690,7 +2770,7 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
 
     for (index = 0; index < num_channels; ++index) {
         EncChannel *c = channels + index;
-        if (c->config->y4m_input == EB_TRUE) {
+        if (c->config->y4m_input == TRUE) {
             ret_y4m = read_y4m_header(c->config);
             if (ret_y4m == EB_ErrorBadParameter) {
                 fprintf(stderr, "Error found when reading the y4m file parameters.\n");
@@ -2704,7 +2784,7 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
     for (index = 0; index < num_channels; ++index) {
         EncChannel *c      = channels + index;
         EbConfig   *config = c->config;
-        if (config->config.enable_manual_pred_struct == EB_TRUE) {
+        if (config->config.enable_manual_pred_struct == TRUE) {
             c->return_error = (EbErrorType)read_pred_struct_file(
                 config, config->input_pred_struct_filename, index);
             return_error = (EbErrorType)(return_error & c->return_error);
@@ -2758,6 +2838,19 @@ EbErrorType read_command_line(int32_t argc, char *const argv[], EncChannel *chan
         fprintf(stderr, "Unprocessed tokens: ");
         for (cmd_copy_index = 0; cmd_copy_index < cmd_token_cnt; ++cmd_copy_index)
             fprintf(stderr, " %s ", cmd_copy[cmd_copy_index]);
+        fprintf(stderr, "\n\n");
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (cmd_arg_cnt > 0) {
+        int32_t arg_copy_index, maybe_token = 0;
+        fprintf(stderr, "Unprocessed arguments: ");
+        for (arg_copy_index = 0; arg_copy_index < cmd_arg_cnt; ++arg_copy_index) {
+            maybe_token |= !!strchr(arg_copy[arg_copy_index], '-');
+            fprintf(stderr, " %s ", arg_copy[arg_copy_index]);
+        }
+        if (maybe_token)
+            fprintf(stderr, "\nMissing spacing between tokens");
         fprintf(stderr, "\n\n");
         return_error = EB_ErrorBadParameter;
     }

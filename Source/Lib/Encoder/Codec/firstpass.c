@@ -58,7 +58,7 @@ static EbErrorType realloc_stats_out(SequenceControlSet *scs_ptr, FirstPassStats
         size_t capability = (int64_t)frame_number >= (int64_t)STATS_CAPABILITY_INIT - 1
             ? STATS_CAPABILITY_GROW(frame_number)
             : STATS_CAPABILITY_INIT;
-        if (scs_ptr->lap_enabled) {
+        if (scs_ptr->lap_rc) {
             //store the data points before re-allocation
             uint64_t stats_in_start_offset = 0;
             uint64_t stats_in_offset       = 0;
@@ -499,29 +499,29 @@ EbErrorType first_pass_signal_derivation_multi_processes(SequenceControlSet *   
     pcs_ptr->multi_pass_pd_level = MULTI_PASS_PD_OFF;
 
     // Set disallow_nsq
-    pcs_ptr->disallow_nsq = EB_TRUE;
+    pcs_ptr->disallow_nsq = TRUE;
 
     pcs_ptr->max_number_of_pus_per_sb          = SQUARE_PU_COUNT;
-    pcs_ptr->disallow_all_nsq_blocks_below_8x8 = EB_TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_below_8x8 = TRUE;
 
     // Set disallow_all_nsq_blocks_below_16x16: 16x8, 8x16, 16x4, 4x16
-    pcs_ptr->disallow_all_nsq_blocks_below_16x16 = EB_TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_below_16x16 = TRUE;
 
-    pcs_ptr->disallow_all_nsq_blocks_below_64x64 = EB_TRUE;
-    pcs_ptr->disallow_all_nsq_blocks_below_32x32 = EB_TRUE;
-    pcs_ptr->disallow_all_nsq_blocks_above_64x64 = EB_TRUE;
-    pcs_ptr->disallow_all_nsq_blocks_above_32x32 = EB_TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_below_64x64 = TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_below_32x32 = TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_above_64x64 = TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_above_32x32 = TRUE;
     // disallow_all_nsq_blocks_above_16x16
-    pcs_ptr->disallow_all_nsq_blocks_above_16x16 = EB_TRUE;
+    pcs_ptr->disallow_all_nsq_blocks_above_16x16 = TRUE;
 
-    pcs_ptr->disallow_HVA_HVB_HV4 = EB_TRUE;
-    pcs_ptr->disallow_HV4         = EB_TRUE;
+    pcs_ptr->disallow_HVA_HVB_HV4 = TRUE;
+    pcs_ptr->disallow_HV4         = TRUE;
 
     // Set disallow_all_non_hv_nsq_blocks_below_16x16
-    pcs_ptr->disallow_all_non_hv_nsq_blocks_below_16x16 = EB_TRUE;
+    pcs_ptr->disallow_all_non_hv_nsq_blocks_below_16x16 = TRUE;
 
     // Set disallow_all_h4_v4_blocks_below_16x16
-    pcs_ptr->disallow_all_h4_v4_blocks_below_16x16 = EB_TRUE;
+    pcs_ptr->disallow_all_h4_v4_blocks_below_16x16 = TRUE;
 
     frm_hdr->allow_screen_content_tools = 0;
     frm_hdr->allow_intrabc              = 0;
@@ -1331,7 +1331,7 @@ void open_loop_first_pass(PictureParentControlSet *  ppcs_ptr,
                              me_context_ptr->me_context_ptr->skip_frame,
                              me_context_ptr->me_context_ptr->bypass_blk_step,
                              ppcs_ptr->ts_duration);
-        if (ppcs_ptr->end_of_sequence_flag && !ppcs_ptr->scs_ptr->lap_enabled)
+        if (ppcs_ptr->end_of_sequence_flag && !ppcs_ptr->scs_ptr->lap_rc)
             svt_av1_end_first_pass(ppcs_ptr);
         // Signal that the first pass is done
         svt_post_semaphore(ppcs_ptr->first_pass_done_semaphore);

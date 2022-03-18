@@ -15,7 +15,7 @@
 #include "EbModeDecisionProcess.h"
 #include "EbLambdaRateTables.h"
 
-uint8_t get_bypass_encdec(EbEncMode enc_mode, uint8_t hbd_mode_decision, uint8_t encoder_bit_depth);
+uint8_t get_bypass_encdec(EncMode enc_mode, uint8_t hbd_mode_decision, uint8_t encoder_bit_depth);
 void    set_block_based_depth_refinement_controls(ModeDecisionContext *mdctxt,
                                                   uint8_t block_based_depth_refinement_level);
 int     svt_av1_allow_palette(int allow_palette, BlockSize sb_type);
@@ -32,8 +32,10 @@ static void mode_decision_context_dctor(EbPtr p) {
         EB_FREE_ARRAY(obj->palette_size_array_0);
     if (obj->palette_size_array_1)
         EB_FREE_ARRAY(obj->palette_size_array_1);
+#if !CLN_MD_CTX
     EB_FREE_ARRAY(obj->ref_best_ref_sq_table);
     EB_FREE_ARRAY(obj->ref_best_cost_sq_table);
+#endif
     for (CandClass cand_class_it = CAND_CLASS_0; cand_class_it < CAND_CLASS_TOTAL; cand_class_it++)
         EB_FREE_ARRAY(obj->cand_buff_indices[cand_class_it]);
     EB_FREE_ARRAY(obj->best_candidate_index_array);
@@ -54,10 +56,16 @@ static void mode_decision_context_dctor(EbPtr p) {
     EB_DELETE(obj->trans_quant_buffers_ptr);
     EB_FREE_ALIGNED_ARRAY(obj->cfl_temp_luma_recon16bit);
     EB_FREE_ALIGNED_ARRAY(obj->cfl_temp_luma_recon);
+#if !CLN_MD_CTX
     if (obj->is_md_rate_estimation_ptr_owner)
         EB_FREE_ARRAY(obj->md_rate_estimation_ptr);
+#endif
     EB_FREE_ARRAY(obj->fast_candidate_array);
     EB_FREE_ARRAY(obj->fast_candidate_ptr_array);
+#if OPT_MV_INJ_CHECK
+    EB_FREE_2D(obj->injected_mvs);
+    EB_FREE_ARRAY(obj->injected_ref_types);
+#endif
     EB_FREE_ARRAY(obj->fast_cost_array);
     EB_FREE_ARRAY(obj->full_cost_array);
     if (obj->md_local_blk_unit) {
@@ -75,7 +83,13 @@ static void mode_decision_context_dctor(EbPtr p) {
     EB_FREE_ARRAY(obj->tested_blk_flag);
     EB_FREE_ARRAY(obj->md_local_blk_unit);
     EB_FREE_ARRAY(obj->md_blk_arr_nsq);
+#if !CLN_MD_CTX
     EB_FREE_ARRAY(obj->md_ep_pipe_sb);
+#endif
+#if OPT_UPDATE_CDF_MEM
+    if (obj->rate_est_table)
+        EB_FREE_ARRAY(obj->rate_est_table);
+#endif
     EB_FREE_ARRAY(obj->mdc_sb_array);
     for (uint32_t txt_itr = 0; txt_itr < TX_TYPES; ++txt_itr) {
         EB_DELETE(obj->recon_coeff_ptr[txt_itr]);
@@ -86,17 +100,29 @@ static void mode_decision_context_dctor(EbPtr p) {
     EB_DELETE(obj->temp_residual_ptr);
     EB_DELETE(obj->temp_recon_ptr);
 }
-
-uint8_t get_nic_level(EbEncMode enc_mode, uint8_t temporal_layer_index);
+#if TUNE_4L_M7
+uint8_t get_nic_level(EncMode enc_mode, uint8_t is_base, uint8_t hierarchical_levels);
+#else
+uint8_t get_nic_level(EncMode enc_mode, uint8_t temporal_layer_index);
+#endif
 uint8_t set_nic_controls(ModeDecisionContext *ctx, uint8_t nic_level);
 void    set_nics(NicScalingCtrls *scaling_ctrls, uint32_t mds1_count[CAND_CLASS_TOTAL],
                  uint32_t mds2_count[CAND_CLASS_TOTAL], uint32_t mds3_count[CAND_CLASS_TOTAL],
                  uint8_t pic_type);
+
+#if OPT_UPDATE_CDF_MEM
+uint8_t get_update_cdf_level(EncMode enc_mode, SliceType is_islice, uint8_t is_base);
+#endif
+#if OPT_CAND_BUFF_MEM
+uint8_t get_chroma_level(EncMode enc_mode);
+uint8_t set_chroma_controls(ModeDecisionContext *ctx, uint8_t uv_level);
+#endif
+
 /*
 * return the max canidate count for MDS0
   Used by candidate injection and memory allocation
 */
-uint16_t get_max_can_count(EbEncMode enc_mode) {
+uint16_t get_max_can_count(EncMode enc_mode) {
     //NOTE: this is a memory feature and not a speed feature. it should not be have any speed/quality impact.
     uint16_t mem_max_can_count;
 
@@ -132,7 +158,12 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
                                        uint32_t encoder_bit_depth,
                                        EbFifo  *mode_decision_configuration_input_fifo_ptr,
                                        EbFifo  *mode_decision_output_fifo_ptr,
+#if TUNE_4L_M7
+                                       uint8_t enable_hbd_mode_decision, uint8_t cfg_palette,
+                                       uint32_t hierarchical_levels) {
+#else
                                        uint8_t enable_hbd_mode_decision, uint8_t cfg_palette) {
+#endif
     uint32_t buffer_index;
     uint32_t cand_index;
 
@@ -154,9 +185,14 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
     // determine MAX_NICS for a given preset
     // get the min scaling level (the smallest scaling level is the most conservative)
     uint8_t min_nic_scaling_level = NICS_SCALING_LEVELS - 1;
+#if TUNE_4L_M7
+    for (uint8_t is_base = 0; is_base < 2; is_base++) {
+        uint8_t nic_level = get_nic_level(enc_mode, is_base, hierarchical_levels);
+#else
     for (uint8_t temporal_layer_index = 0; temporal_layer_index < MAX_TEMPORAL_LAYERS;
-         temporal_layer_index++) {
+        temporal_layer_index++) {
         uint8_t nic_level         = get_nic_level(enc_mode, temporal_layer_index);
+#endif
         uint8_t nic_scaling_level = set_nic_controls(NULL, nic_level);
         min_nic_scaling_level     = MIN(min_nic_scaling_level, nic_scaling_level);
     }
@@ -183,27 +219,60 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
         }
     }
 
+#if OPT_CAND_BUFF_MEM
+    // If independent chroma search is used, need to allocate additional 84 candidate buffers
+    const uint8_t ind_uv_cands = set_chroma_controls(NULL, get_chroma_level(enc_mode)) == CHROMA_MODE_0 ? 84 : 0;
+#endif
     max_nics += CAND_CLASS_TOTAL; //need one extra temp buffer for each fast loop call
     context_ptr->max_nics    = max_nics;
+#if OPT_CAND_BUFF_MEM
+    context_ptr->max_nics_uv = max_nics + ind_uv_cands;
+#else
     context_ptr->max_nics_uv = max_nics + 84; // needed for independant chroma search
+#endif
     // Cfl scratch memory
     if (context_ptr->hbd_mode_decision > EB_8_BIT_MD)
         EB_MALLOC_ALIGNED(context_ptr->cfl_temp_luma_recon16bit,
                           sizeof(uint16_t) * sb_size * sb_size);
     if (context_ptr->hbd_mode_decision != EB_10_BIT_MD)
         EB_MALLOC_ALIGNED(context_ptr->cfl_temp_luma_recon, sizeof(uint8_t) * sb_size * sb_size);
+#if !CLN_MD_CTX
     // MD rate Estimation tables
     EB_MALLOC_ARRAY(context_ptr->md_rate_estimation_ptr, 1);
-    context_ptr->is_md_rate_estimation_ptr_owner = EB_TRUE;
-
+    context_ptr->is_md_rate_estimation_ptr_owner = TRUE;
+#endif
+#if OPT_UPDATE_CDF_MEM
+    uint8_t use_update_cdf = 0;
+    for (uint8_t is_islice = 0; is_islice < 2; is_islice++) {
+        for (uint8_t is_base = 0; is_base < 2; is_base++) {
+            if (use_update_cdf) break;
+            use_update_cdf |= get_update_cdf_level(enc_mode, is_islice, is_base);
+        }
+    }
+    if (use_update_cdf)
+        EB_CALLOC_ARRAY(context_ptr->rate_est_table, 1);
+    else
+        context_ptr->rate_est_table = NULL;
+#endif
     EB_MALLOC_ARRAY(context_ptr->md_local_blk_unit, block_max_count_sb);
     EB_MALLOC_ARRAY(context_ptr->md_blk_arr_nsq, block_max_count_sb);
+#if !CLN_MD_CTX
     EB_MALLOC_ARRAY(context_ptr->md_ep_pipe_sb, block_max_count_sb);
+#endif
     // Fast Candidate Array
+#if OPT_CAND_BUFF_MEM
+    uint16_t max_can_count = get_max_can_count(enc_mode) + ind_uv_cands;
+#else
     uint16_t max_can_count = get_max_can_count(enc_mode) + 84; //chroma search;
+#endif
     EB_MALLOC_ARRAY(context_ptr->fast_candidate_array, max_can_count);
 
     EB_MALLOC_ARRAY(context_ptr->fast_candidate_ptr_array, max_can_count);
+#if OPT_MV_INJ_CHECK
+    assert_err(max_can_count > ind_uv_cands, "Max. candidates is too low");
+    EB_MALLOC_2D(context_ptr->injected_mvs, (uint16_t)(max_can_count - ind_uv_cands), 2);
+    EB_MALLOC_ARRAY(context_ptr->injected_ref_types, (max_can_count - ind_uv_cands));
+#endif
 
     for (cand_index = 0; cand_index < max_can_count; ++cand_index) {
         context_ptr->fast_candidate_ptr_array[cand_index] =
@@ -332,7 +401,7 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
             init_data.right_padding      = 0;
             init_data.top_padding        = 0;
             init_data.bot_padding        = 0;
-            init_data.split_mode         = EB_FALSE;
+            init_data.split_mode         = FALSE;
 
             EB_NEW(context_ptr->md_blk_arr_nsq[coded_leaf_index].coeff_tmp,
                    svt_picture_buffer_desc_ctor,
@@ -349,7 +418,7 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
             init_data.right_padding = 0;
             init_data.top_padding   = 0;
             init_data.bot_padding   = 0;
-            init_data.split_mode    = EB_FALSE;
+            init_data.split_mode    = FALSE;
 
             EB_NEW(context_ptr->md_blk_arr_nsq[coded_leaf_index].recon_tmp,
                    svt_picture_buffer_desc_ctor,
@@ -363,9 +432,10 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
         EB_MALLOC_ARRAY(context_ptr->cand_buff_indices[cand_class_it], context_ptr->max_nics_uv);
 
     EB_MALLOC_ARRAY(context_ptr->best_candidate_index_array, context_ptr->max_nics_uv);
-
+#if !CLN_MD_CTX
     EB_MALLOC_ARRAY(context_ptr->ref_best_cost_sq_table, MAX_REF_TYPE_CAND);
     EB_MALLOC_ARRAY(context_ptr->ref_best_ref_sq_table, MAX_REF_TYPE_CAND);
+#endif
     EB_MALLOC_ARRAY(context_ptr->above_txfm_context, (sb_size >> MI_SIZE_LOG2));
     EB_MALLOC_ARRAY(context_ptr->left_txfm_context, (sb_size >> MI_SIZE_LOG2));
     EbPictureBufferDescInitData thirty_two_width_picture_buffer_desc_init_data;
@@ -380,7 +450,7 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
     picture_buffer_desc_init_data.right_padding      = 0;
     picture_buffer_desc_init_data.top_padding        = 0;
     picture_buffer_desc_init_data.bot_padding        = 0;
-    picture_buffer_desc_init_data.split_mode         = EB_FALSE;
+    picture_buffer_desc_init_data.split_mode         = FALSE;
 
     thirty_two_width_picture_buffer_desc_init_data.max_width    = sb_size;
     thirty_two_width_picture_buffer_desc_init_data.max_height   = sb_size;
@@ -392,7 +462,7 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
     thirty_two_width_picture_buffer_desc_init_data.right_padding = 0;
     thirty_two_width_picture_buffer_desc_init_data.top_padding   = 0;
     thirty_two_width_picture_buffer_desc_init_data.bot_padding   = 0;
-    thirty_two_width_picture_buffer_desc_init_data.split_mode    = EB_FALSE;
+    thirty_two_width_picture_buffer_desc_init_data.split_mode    = FALSE;
 
     for (uint32_t txt_itr = 0; txt_itr < TX_TYPES; ++txt_itr) {
         EB_NEW(context_ptr->recon_coeff_ptr[txt_itr],
@@ -418,7 +488,7 @@ EbErrorType mode_decision_context_ctor(ModeDecisionContext *context_ptr, EbColor
     double_width_picture_buffer_desc_init_data.right_padding      = 0;
     double_width_picture_buffer_desc_init_data.top_padding        = 0;
     double_width_picture_buffer_desc_init_data.bot_padding        = 0;
-    double_width_picture_buffer_desc_init_data.split_mode         = EB_FALSE;
+    double_width_picture_buffer_desc_init_data.split_mode         = FALSE;
 
     // The temp_recon_ptr and temp_residual_ptr will be shared by all candidates
     // If you want to do something with residual or recon, you need to create one
@@ -527,7 +597,7 @@ void av1_lambda_assign_md(PictureControlSet *pcs_ptr, ModeDecisionContext *conte
 }
 
 void av1_lambda_assign(PictureControlSet *pcs_ptr, uint32_t *fast_lambda, uint32_t *full_lambda,
-                       uint8_t bit_depth, uint16_t qp_index, EbBool multiply_lambda) {
+                       uint8_t bit_depth, uint16_t qp_index, Bool multiply_lambda) {
     if (bit_depth == 8) {
         *full_lambda = (uint32_t)compute_rdmult_sse(pcs_ptr, (uint8_t)qp_index, bit_depth);
         *fast_lambda = av1_lambda_mode_decision8_bit_sad[qp_index];
@@ -564,10 +634,12 @@ void reset_mode_decision(SequenceControlSet *scs_ptr, ModeDecisionContext *conte
     context_ptr->qp_index = (uint8_t)frm_hdr->quantization_params.base_q_idx;
     av1_lambda_assign_md(pcs_ptr, context_ptr);
     // Reset MD rate Estimation table to initial values by copying from md_rate_estimation_array
+#if !CLN_MD_CTX
     if (context_ptr->is_md_rate_estimation_ptr_owner) {
-        context_ptr->is_md_rate_estimation_ptr_owner = EB_FALSE;
+        context_ptr->is_md_rate_estimation_ptr_owner = FALSE;
         EB_FREE_ARRAY(context_ptr->md_rate_estimation_ptr);
     }
+#endif
     context_ptr->md_rate_estimation_ptr = pcs_ptr->md_rate_estimation_array;
     // Reset CABAC Contexts
 

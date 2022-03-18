@@ -102,6 +102,7 @@ void set_hme_search_params(PictureParentControlSet *pcs_ptr, MeContext *me_conte
             me_context_ptr->hme_l0_sa.sa_max = (SearchArea){192, 192};
         }
     }
+
     else if (pcs_ptr->enc_mode <= ENC_M11) {
         if (pcs_ptr->sc_class1) {
             me_context_ptr->hme_l0_sa.sa_min = (SearchArea){32, 32};
@@ -111,7 +112,11 @@ void set_hme_search_params(PictureParentControlSet *pcs_ptr, MeContext *me_conte
             me_context_ptr->hme_l0_sa.sa_max = (SearchArea) { 192, 192 };
         }
     }
+#if CLN_SIG_DERIV
+    else {
+#else
     else if (pcs_ptr->enc_mode <= ENC_M13) {
+#endif
         if (pcs_ptr->sc_class1) {
             me_context_ptr->hme_l0_sa.sa_min = (SearchArea){ 32, 32 };
             me_context_ptr->hme_l0_sa.sa_max = (SearchArea){ 192, 192 };
@@ -127,6 +132,7 @@ void set_hme_search_params(PictureParentControlSet *pcs_ptr, MeContext *me_conte
             }
         }
     }
+#if !CLN_SIG_DERIV
     else {
         if (pcs_ptr->sc_class1) {
             me_context_ptr->hme_l0_sa.sa_min = (SearchArea) { 16, 16 };
@@ -137,7 +143,7 @@ void set_hme_search_params(PictureParentControlSet *pcs_ptr, MeContext *me_conte
             me_context_ptr->hme_l0_sa.sa_max = (SearchArea){ 96, 96 };
         }
     }
-
+#endif
     // Set the HME Level 1 and Level 2 refinement areas
     if (pcs_ptr->enc_mode <= ENC_M1) {
         me_context_ptr->hme_l1_sa = (SearchArea){16, 16};
@@ -153,6 +159,9 @@ void set_hme_search_params(PictureParentControlSet *pcs_ptr, MeContext *me_conte
  ************************************************/
 void set_me_search_params(SequenceControlSet *scs_ptr, PictureParentControlSet *pcs_ptr,
                           MeContext *me_context_ptr, EbInputResolution input_resolution) {
+#if TUNE_4L_M11
+    uint32_t hierarchical_levels = scs_ptr->static_config.hierarchical_levels;
+#endif
     // Set the min and max ME search area
     if (pcs_ptr->sc_class1) {
         if (pcs_ptr->enc_mode <= ENC_M2) {
@@ -195,6 +204,51 @@ void set_me_search_params(SequenceControlSet *scs_ptr, PictureParentControlSet *
         me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 16 };
         me_context_ptr->me_sa.sa_max = (SearchArea) { 64, 32 };
     }
+#if VMAF_OPT
+#if TUNE_4L_M8
+    else if (pcs_ptr->enc_mode <= ENC_M7) {
+        if (input_resolution < INPUT_SIZE_1080p_RANGE) {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 16 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 32, 16 };
+        }
+        else {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 6 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
+        }
+    }
+    else if (pcs_ptr->enc_mode <= ENC_M8) {
+        if (hierarchical_levels <= 3) {
+            if (input_resolution < INPUT_SIZE_4K_RANGE) {
+                me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 5 };
+                me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
+            }
+            else {
+                me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 1 };
+                me_context_ptr->me_sa.sa_max = (SearchArea) { 8, 1 };
+            }
+        }
+        else if (input_resolution < INPUT_SIZE_1080p_RANGE) {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 16 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 32, 16 };
+        }
+        else {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 6 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
+        }
+    }
+#else
+    else if (pcs_ptr->enc_mode <= ENC_M8) {
+        if (input_resolution < INPUT_SIZE_1080p_RANGE) {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 16 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 32, 16 };
+        }
+        else {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 16, 6 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
+        }
+    }
+#endif
+#else
     else if (pcs_ptr->enc_mode <= ENC_M9) {
         if (input_resolution < INPUT_SIZE_1080p_RANGE) {
             me_context_ptr->me_sa.sa_min = (SearchArea){16, 16};
@@ -203,16 +257,59 @@ void set_me_search_params(SequenceControlSet *scs_ptr, PictureParentControlSet *
             me_context_ptr->me_sa.sa_min = (SearchArea){16, 6};
             me_context_ptr->me_sa.sa_max = (SearchArea){16, 9};
         }
-    } else if (pcs_ptr->enc_mode <= ENC_M11) {
+    }
+#endif
+#if TUNE_4L_M11
+    else if (pcs_ptr->enc_mode <= ENC_M10) {
         if (input_resolution < INPUT_SIZE_4K_RANGE) {
-            me_context_ptr->me_sa.sa_min = (SearchArea){8, 5};
-            me_context_ptr->me_sa.sa_max = (SearchArea){16, 9};
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 5 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
         }
         else {
-            me_context_ptr->me_sa.sa_min = (SearchArea){8, 1};
-            me_context_ptr->me_sa.sa_max = (SearchArea){8, 1};
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 1 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 8, 1 };
         }
-    } else if (pcs_ptr->enc_mode <= ENC_M12) {
+    }
+    else if (pcs_ptr->enc_mode <= ENC_M11) {
+        if (hierarchical_levels <= 3) {
+            if (input_resolution < INPUT_SIZE_720p_RANGE) {
+                me_context_ptr->me_sa.sa_min = (SearchArea){8, 3};
+                me_context_ptr->me_sa.sa_max = (SearchArea){16, 9};
+            } else if (input_resolution < INPUT_SIZE_1080p_RANGE) {
+                me_context_ptr->me_sa.sa_min = (SearchArea){8, 1};
+                me_context_ptr->me_sa.sa_max = (SearchArea){16, 7};
+            } else if (input_resolution < INPUT_SIZE_4K_RANGE) {
+                me_context_ptr->me_sa.sa_min = (SearchArea){8, 1};
+                me_context_ptr->me_sa.sa_max = (SearchArea){8, 7};
+            } else {
+                me_context_ptr->me_sa.sa_min = (SearchArea){8, 1};
+                me_context_ptr->me_sa.sa_max = (SearchArea){8, 1};
+            }
+        }
+        else {
+            if (input_resolution < INPUT_SIZE_4K_RANGE) {
+                me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 5 };
+                me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
+            }
+            else {
+                me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 1 };
+                me_context_ptr->me_sa.sa_max = (SearchArea) { 8, 1 };
+            }
+        }
+    }
+#else
+    else if (pcs_ptr->enc_mode <= ENC_M11) {
+        if (input_resolution < INPUT_SIZE_4K_RANGE) {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 5 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 16, 9 };
+        }
+        else {
+            me_context_ptr->me_sa.sa_min = (SearchArea) { 8, 1 };
+            me_context_ptr->me_sa.sa_max = (SearchArea) { 8, 1 };
+        }
+    }
+#endif
+    else if (pcs_ptr->enc_mode <= ENC_M12) {
         if (input_resolution < INPUT_SIZE_720p_RANGE) {
             me_context_ptr->me_sa.sa_min = (SearchArea){8, 3};
             me_context_ptr->me_sa.sa_max = (SearchArea){16, 9};
@@ -432,13 +529,17 @@ EbErrorType signal_derivation_me_kernel_oq(SequenceControlSet *       scs_ptr,
                                            MotionEstimationContext_t *context_ptr) {
     EbErrorType return_error = EB_ErrorNone;
 
-    EbEncMode         enc_mode         = pcs_ptr->enc_mode;
+    EncMode         enc_mode         = pcs_ptr->enc_mode;
     EbInputResolution input_resolution = scs_ptr->input_resolution;
+#if TUNE_4L_M11
+    const uint32_t hierarchical_levels = scs_ptr->static_config.hierarchical_levels;
+#endif
     // Set ME search area
     set_me_search_params(scs_ptr, pcs_ptr, context_ptr->me_context_ptr, input_resolution);
 
     // Set HME search area
     set_hme_search_params(pcs_ptr, context_ptr->me_context_ptr, input_resolution);
+
     // Set HME flags
     context_ptr->me_context_ptr->enable_hme_flag        = pcs_ptr->enable_hme_flag;
     context_ptr->me_context_ptr->enable_hme_level0_flag = pcs_ptr->enable_hme_level0_flag;
@@ -472,12 +573,28 @@ EbErrorType signal_derivation_me_kernel_oq(SequenceControlSet *       scs_ptr,
         prehme_level = 1;
     else
     {
+#if TUNE_4L_M11
+        if (enc_mode <= ENC_M10)
+            prehme_level = 1;
+        else if (enc_mode <= ENC_M11) {
+            if (hierarchical_levels <= 3)
+                prehme_level = 3;
+            else
+                prehme_level = 1;
+        }
+#else
         if (enc_mode <= ENC_M11)
             prehme_level = 1;
+#endif
+#if CLN_SIG_DERIV
+        else
+            prehme_level = 3;
+#else
         else if (enc_mode <= ENC_M13)
             prehme_level = 3;
         else
             prehme_level = 0;
+#endif
     }
     if (pcs_ptr->enable_hme_level1_flag == 0)
         prehme_level = 0;
@@ -526,8 +643,24 @@ EbErrorType signal_derivation_me_kernel_oq(SequenceControlSet *       scs_ptr,
     // Set signal at picture level b/c may check signal in MD
     context_ptr->me_context_ptr->use_best_unipred_cand_only =
         pcs_ptr->use_best_me_unipred_cand_only;
+#if TUNE_M7
+#if OPT_M7_SUBJ
+    if (enc_mode <= ENC_M6)
+        context_ptr->me_context_ptr->me_early_exit_th = 0;
+    else if (enc_mode <= ENC_M7) {
+        if (hierarchical_levels <= 3)
+            context_ptr->me_context_ptr->me_early_exit_th = BLOCK_SIZE_64 * BLOCK_SIZE_64 * 8;
+        else
+            context_ptr->me_context_ptr->me_early_exit_th = 0;
+    }
+#else
+    if (enc_mode <= ENC_M7)
+        context_ptr->me_context_ptr->me_early_exit_th = 0;
+#endif
+#else
     if (pcs_ptr->enc_mode <= ENC_M6)
         context_ptr->me_context_ptr->me_early_exit_th = 0;
+#endif
     else if (pcs_ptr->enc_mode <= ENC_M11)
         context_ptr->me_context_ptr->me_early_exit_th = BLOCK_SIZE_64 * BLOCK_SIZE_64 * 8;
     else
@@ -730,11 +863,11 @@ void *motion_estimation_kernel(void *input_ptr) {
             uint32_t y_b64_start_index = SEGMENT_START_IDX(y_segment_index, picture_height_in_b64, pcs_ptr->me_segments_row_count);
             uint32_t y_b64_end_index = SEGMENT_END_IDX(y_segment_index, picture_height_in_b64, pcs_ptr->me_segments_row_count);
 
-            EbBool skip_me = EB_FALSE;
+            Bool skip_me = FALSE;
             if (scs_ptr->static_config.pass == ENC_FIRST_PASS ||
                 (!pcs_ptr->is_used_as_reference_flag && scs_ptr->rc_stat_gen_pass_mode &&
                  !pcs_ptr->first_frame_in_minigop))
-                skip_me = EB_TRUE;
+                skip_me = TRUE;
             // skip me for the first pass. ME is already performed
             if (!skip_me) {
                 if (pcs_ptr->slice_type != I_SLICE) {
@@ -854,7 +987,7 @@ void *motion_estimation_kernel(void *input_ptr) {
                                         global_motion_estimation(pcs_ptr, input_picture_ptr);
                                     else
                                         // Initilize global motion to be OFF when GM is OFF
-                                        memset(pcs_ptr->is_global_motion, EB_FALSE, MAX_NUM_OF_REF_PIC_LIST * REF_LIST_MAX_DEPTH);
+                                        memset(pcs_ptr->is_global_motion, FALSE, MAX_NUM_OF_REF_PIC_LIST * REF_LIST_MAX_DEPTH);
                                 }
 
                                 svt_release_mutex(pcs_ptr->me_processed_b64_mutex);

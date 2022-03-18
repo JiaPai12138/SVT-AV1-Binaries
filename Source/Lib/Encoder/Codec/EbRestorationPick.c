@@ -1376,8 +1376,13 @@ static void search_wiener_seg(const RestorationTileLimits *limits, const Av1Pixe
     rui.restoration_type = RESTORE_WIENER;
     // Check whether you can use the filter coeffs from previous frames; if not, must generate new coeffs
     if (cm->wn_filter_ctrls.use_prev_frame_coeffs &&
+#if FRFCTR_RC_P8
+        (cm->child_pcs->parent_pcs_ptr->frm_hdr.frame_type != KEY_FRAME &&
+        cm->child_pcs->parent_pcs_ptr->frm_hdr.frame_type != INTRA_ONLY_FRAME) &&
+#else
         (cm->current_frame.frame_type != KEY_FRAME &&
          cm->current_frame.frame_type != INTRA_ONLY_FRAME) &&
+#endif
         cm->child_pcs->rst_info[rsc->plane].unit_info[rest_unit_idx].restoration_type ==
             RESTORE_WIENER) {
         // Copy filter info, stored from previous frame(s)
@@ -1572,7 +1577,7 @@ void restoration_seg_search(int32_t *rst_tmpbuf, Yv12BufferConfig *org_fts,
                              RESTORATION_BORDER,
                              RESTORATION_BORDER,
                              highbd);
-            pcs_ptr->rest_extend_flag[plane] = EB_TRUE;
+            pcs_ptr->rest_extend_flag[plane] = TRUE;
         }
         svt_release_mutex(pcs_ptr->rest_search_mutex);
 

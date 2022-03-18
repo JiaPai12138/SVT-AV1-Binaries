@@ -236,7 +236,7 @@ typedef struct SequenceControlSet {
     uint32_t         rest_process_init_count;
     uint32_t         tpl_disp_process_init_count;
     uint32_t         total_process_init_count;
-    int32_t          lap_enabled;
+    int32_t          lap_rc;
     TWO_PASS         twopass;
     double           double_frame_rate;
     Quants           quants_bd; // follows input bit depth
@@ -275,7 +275,7 @@ typedef struct SequenceControlSet {
     * 1: 16 bit pipeline.
     * Now 16bit pipeline is only enabled in filter
     * Default is 0. */
-    EbBool is_16bit_pipeline;
+    Bool is_16bit_pipeline;
 
     /* Super block size (mm-signal)
     *
@@ -290,7 +290,7 @@ typedef struct SequenceControlSet {
     /* Global motion
     *
     * Default is 1. */
-    EbBool enable_global_motion;
+    Bool enable_global_motion;
     int    sg_filter_mode;
     int    wn_filter_mode;
 
@@ -345,7 +345,7 @@ typedef struct SequenceControlSet {
     *
     * Default is -1. */
     int compound_level;
-
+#if !OPT_CAND_BUFF_MEM
     /* Chroma mode
     *
     * Level                Settings
@@ -356,6 +356,7 @@ typedef struct SequenceControlSet {
     *
     * Default is -1 (AUTO) */
     int set_chroma_mode;
+#endif
     /* Disable chroma from luma (CFL)
     *
     * Default is -1 (auto) */
@@ -399,7 +400,7 @@ typedef struct SequenceControlSet {
     /* Flag to enable the use of non-swaure partitions
     *
     * Default is 1. */
-    EbBool ext_block_flag;
+    Bool ext_block_flag;
 
     /* Flag to control intraBC mode
     *  0      OFF
