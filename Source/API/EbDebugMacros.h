@@ -37,6 +37,7 @@ extern "C" {
 #define FTR_CBR                 1 // Adding CBR mode for LD mode
 #define FIX_TF_LDB              1 // Fix TF parameters for LD
 #define FTR_LDB_MT              1 // New Multi-Threading parameters for LD
+#define FTR_IMPROVE_SI          1 // Improve bitrate matching and violation for low intra refresh
 
 #define VMAF_OPT                1 // Optimizing Y-PSNR/Y-SSIM/VMAF
 #define TUNE_M13                1 // Optimizing M13 for better slope
@@ -105,6 +106,17 @@ extern "C" {
 #define OPT_TPL                 1 // Improve TPL based QP assignment
 #define OPT_TPL_M12_M13         1 // Setting tpl_lad_mg to 1 for M12 and M13
 #define TUNE_MAX_PRESET_LOW_RES 1 // Limit 240p content to M11 and below and limit 360p content to M12 and below
+
+#define FIX_SCD                 1 // Optimize SCD, use SCD for both the subjective mode and the objective mode
+#define FIX_NCH                 1 // Fix CLI token processing for --nch
+#define FIX_USE_ONE_SCS         1 // Use a single scs for the sequence; remove need to copy between scs
+#if FIX_USE_ONE_SCS
+#define FIX_REMOVE_SCS_WRAPPER  1 // Remove the scs_wrapper_ptr from pcs; reference the scs directly
+#endif
+#define CLN_SCS_SIG_DERIV       1 // Cleanup setting scs signals in resource coordination kernel
+#define CLN_SCS_CTOR            1 // Cleanup the SCS ctor; remove initializations based on unknown info
+
+#define FIX_RC_CRASH            1 // Fix the RC crash in debug mode
 //FOR DEBUGGING - Do not remove
 #define LOG_ENC_DONE            0 // log encoder job one
 #define NO_ENCDEC               0 // bypass encDec to test cmpliance of MD. complained achieved when skip_flag is OFF. Port sample code from VCI-SW_AV1_Candidate1 branch

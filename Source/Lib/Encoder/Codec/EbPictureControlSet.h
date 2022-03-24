@@ -248,7 +248,11 @@ typedef struct CdefDirData {
 typedef struct PictureControlSet {
     /*!< Pointer to the dtor of the struct*/
     EbDctor              dctor;
+#if FIX_REMOVE_SCS_WRAPPER
+    struct SequenceControlSet *scs_ptr;
+#else
     EbObjectWrapper     *scs_wrapper_ptr;
+#endif
     EbPictureBufferDesc *input_frame16bit;
 
     struct PictureParentControlSet *parent_pcs_ptr; //The parent of this PCS.
@@ -671,9 +675,11 @@ typedef struct PaletteCtrls {
 // Parent is created before the Child, and continue to live more. Child PCS only lives the exact time needed to encode the picture: from ME to EC/ALF.
 typedef struct PictureParentControlSet {
     EbDctor              dctor;
+#if !FIX_REMOVE_SCS_WRAPPER
     EbObjectWrapper     *scs_wrapper_ptr;
+#endif
     EbObjectWrapper     *input_picture_wrapper_ptr;
-    EbObjectWrapper     *eb_y8b_wrapper_ptr;
+    EbObjectWrapper     *eb_y8b_wrapper_ptr; // when overlay: y8b buffer is not used, should set to NULL.
     EbObjectWrapper     *reference_picture_wrapper_ptr;
     EbObjectWrapper     *pa_reference_picture_wrapper_ptr;
     EbPictureBufferDesc *enhanced_picture_ptr;
@@ -757,11 +763,15 @@ typedef struct PictureParentControlSet {
     uint16_t         pic_avg_variance;
     Bool           scene_transition_flag[MAX_NUM_OF_REF_PIC_LIST];
 
+#if FIX_SCD
+    uint32_t*** picture_histogram;
+    uint64_t    average_intensity_per_region[MAX_NUMBER_OF_REGIONS_IN_WIDTH][MAX_NUMBER_OF_REGIONS_IN_HEIGHT];
+#else
     // Histograms
     uint32_t ****picture_histogram;
     uint64_t     average_intensity_per_region[MAX_NUMBER_OF_REGIONS_IN_WIDTH]
                                          [MAX_NUMBER_OF_REGIONS_IN_HEIGHT][3];
-
+#endif
     // Segments
     uint16_t me_segments_total_count;
     uint8_t  me_segments_column_count;
@@ -1130,7 +1140,9 @@ typedef struct PictureControlSetInitData {
     uint8_t                  speed_control;
     int8_t                   hbd_mode_decision;
     uint16_t                 film_grain_noise_level;
+#if !CLN_SCS_CTOR
     Bool                   ext_block_flag;
+#endif
     uint8_t                  cdf_mode;
     uint8_t                  over_boundary_block_mode;
     uint8_t                  mfmv;

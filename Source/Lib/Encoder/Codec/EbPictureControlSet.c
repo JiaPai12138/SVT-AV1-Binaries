@@ -329,8 +329,9 @@ EbErrorType recon_coef_ctor(EncDecSet *object_ptr, EbPtr object_init_data_ptr) {
     input_pic_buf_desc_init_data.bot_padding        = padding;
     input_pic_buf_desc_init_data.split_mode         = FALSE;
 
+#if !FIX_REMOVE_SCS_WRAPPER
     //object_ptr->scs_wrapper_ptr = (EbObjectWrapper *)NULL;
-
+#endif
     object_ptr->recon_picture16bit_ptr = (EbPictureBufferDesc *)NULL;
     object_ptr->recon_picture_ptr      = (EbPictureBufferDesc *)NULL; //OMK
     //object_ptr->color_format           = init_data_ptr->color_format;
@@ -452,9 +453,9 @@ EbErrorType picture_control_set_ctor(PictureControlSet *object_ptr, EbPtr object
     coeff_buffer_desc_init_data.bot_padding       = padding;
     coeff_buffer_desc_init_data.split_mode        = FALSE;
     coeff_buffer_desc_init_data.is_16bit_pipeline = init_data_ptr->is_16bit_pipeline;
-
+#if !FIX_REMOVE_SCS_WRAPPER
     object_ptr->scs_wrapper_ptr = (EbObjectWrapper *)NULL;
-
+#endif
     object_ptr->color_format = init_data_ptr->color_format;
 #if !CLN_DLF_MEM_ALLOC
     uint8_t lf_recon_needed  = 0;
@@ -1303,11 +1304,19 @@ static void picture_parent_control_set_dctor(EbPtr ptr) {
              region_in_picture_width_index < MAX_NUMBER_OF_REGIONS_IN_WIDTH;
              region_in_picture_width_index++) {
             if (obj->picture_histogram[region_in_picture_width_index]) {
+#if FIX_SCD
+                for (int region_in_picture_height_index = 0;
+                    region_in_picture_height_index < MAX_NUMBER_OF_REGIONS_IN_HEIGHT;
+                    region_in_picture_height_index++) {
+                    EB_FREE_ARRAY(obj->picture_histogram[region_in_picture_width_index]
+                        [region_in_picture_height_index]);
+#else
                 for (int region_in_picture_height_index = 0;
                      region_in_picture_height_index < MAX_NUMBER_OF_REGIONS_IN_HEIGHT;
                      region_in_picture_height_index++) {
                     EB_FREE_2D(obj->picture_histogram[region_in_picture_width_index]
                                                      [region_in_picture_height_index]);
+#endif
                 }
             }
             EB_FREE_PTR_ARRAY(obj->picture_histogram[region_in_picture_width_index],
@@ -1378,7 +1387,9 @@ EbErrorType picture_parent_control_set_ctor(PictureParentControlSet *object_ptr,
 
     object_ptr->dctor = picture_parent_control_set_dctor;
 
+#if !FIX_REMOVE_SCS_WRAPPER
     object_ptr->scs_wrapper_ptr                 = (EbObjectWrapper *)NULL;
+#endif
     object_ptr->input_picture_wrapper_ptr       = (EbObjectWrapper *)NULL;
     object_ptr->reference_picture_wrapper_ptr   = (EbObjectWrapper *)NULL;
     object_ptr->enhanced_picture_ptr            = (EbPictureBufferDesc *)NULL;
@@ -1428,15 +1439,31 @@ EbErrorType picture_parent_control_set_ctor(PictureParentControlSet *object_ptr,
         EB_MALLOC_2D(object_ptr->variance, object_ptr->sb_total_count, block_count);
     }
 
+
+#if FIX_SCD
+    if (init_data_ptr->scene_change_detection) {
+        EB_ALLOC_PTR_ARRAY(object_ptr->picture_histogram, MAX_NUMBER_OF_REGIONS_IN_WIDTH);
+
+        for (uint32_t region_in_picture_width_index = 0; region_in_picture_width_index < MAX_NUMBER_OF_REGIONS_IN_WIDTH; region_in_picture_width_index++) { // loop over horizontal regions
+            EB_ALLOC_PTR_ARRAY(object_ptr->picture_histogram[region_in_picture_width_index], MAX_NUMBER_OF_REGIONS_IN_HEIGHT);
+            for (uint32_t region_in_picture_height_index = 0;
+                region_in_picture_height_index < MAX_NUMBER_OF_REGIONS_IN_HEIGHT;
+                region_in_picture_height_index++) {
+                EB_MALLOC_ARRAY(object_ptr->picture_histogram[region_in_picture_width_index][region_in_picture_height_index],
+                    HISTOGRAM_NUMBER_OF_BINS);
+            }
+        }
+    }
+#else
     uint8_t plane = init_data_ptr->scene_change_detection ? 3 : 0;
     if (plane) {
         EB_ALLOC_PTR_ARRAY(object_ptr->picture_histogram, MAX_NUMBER_OF_REGIONS_IN_WIDTH);
 
         for (uint32_t region_in_picture_width_index = 0;
-             region_in_picture_width_index < MAX_NUMBER_OF_REGIONS_IN_WIDTH;
-             region_in_picture_width_index++) { // loop over horizontal regions
+            region_in_picture_width_index < MAX_NUMBER_OF_REGIONS_IN_WIDTH;
+            region_in_picture_width_index++) { // loop over horizontal regions
             EB_ALLOC_PTR_ARRAY(object_ptr->picture_histogram[region_in_picture_width_index],
-                               MAX_NUMBER_OF_REGIONS_IN_HEIGHT);
+                MAX_NUMBER_OF_REGIONS_IN_HEIGHT);
             for (uint32_t region_in_picture_height_index = 0;
                  region_in_picture_height_index < MAX_NUMBER_OF_REGIONS_IN_HEIGHT;
                  region_in_picture_height_index++) {
@@ -1447,6 +1474,7 @@ EbErrorType picture_parent_control_set_ctor(PictureParentControlSet *object_ptr,
             }
         }
     }
+#endif
 
     if (init_data_ptr->pass == ENC_FIRST_PASS ||
         (init_data_ptr->rate_control_mode && init_data_ptr->pass == ENC_SINGLE_PASS)) {

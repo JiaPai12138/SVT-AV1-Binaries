@@ -32,8 +32,14 @@ typedef struct ResourceCoordinationContext {
     EbFifo                        *resource_coordination_results_output_fifo_ptr;
     EbFifo                       **picture_control_set_fifo_ptr_array;
     EbSequenceControlSetInstance **scs_instance_array;
+#if !CLN_SCS_SIG_DERIV
+#if FIX_USE_ONE_SCS
+    SequenceControlSet           **sequence_control_set_active_array;
+#else
     EbObjectWrapper              **sequence_control_set_active_array;
     EbFifo                        *sequence_control_set_empty_fifo_ptr;
+#endif
+#endif
     EbCallback                   **app_callback_ptr_array;
 
     // Compute Segments
@@ -69,8 +75,9 @@ static void resource_coordination_context_dctor(EbPtr p) {
     EbThreadContext *thread_contxt_ptr = (EbThreadContext *)p;
     if (thread_contxt_ptr->priv) {
         ResourceCoordinationContext *obj = (ResourceCoordinationContext *)thread_contxt_ptr->priv;
-
+#if !CLN_SCS_SIG_DERIV
         EB_FREE_ARRAY(obj->sequence_control_set_active_array);
+#endif
         EB_FREE_ARRAY(obj->picture_number_array);
         EB_FREE_ARRAY(obj->picture_control_set_fifo_ptr_array);
         EB_FREE_ARRAY(obj);
@@ -100,16 +107,19 @@ EbErrorType resource_coordination_context_ctor(EbThreadContext *thread_contxt_pt
         svt_system_resource_get_producer_fifo(
             enc_handle_ptr->resource_coordination_results_resource_ptr, 0);
     context_ptr->scs_instance_array                  = enc_handle_ptr->scs_instance_array;
+#if !FIX_USE_ONE_SCS
     context_ptr->sequence_control_set_empty_fifo_ptr = svt_system_resource_get_producer_fifo(
         enc_handle_ptr->scs_pool_ptr, 0);
+#endif
     context_ptr->app_callback_ptr_array = enc_handle_ptr->app_callback_ptr_array;
     context_ptr->compute_segments_total_count_array =
         enc_handle_ptr->compute_segments_total_count_array;
     context_ptr->encode_instances_total_count = enc_handle_ptr->encode_instance_total_count;
-
+#if !CLN_SCS_SIG_DERIV
     // Allocate SequenceControlSetActiveArray
     EB_CALLOC_ARRAY(context_ptr->sequence_control_set_active_array,
                     context_ptr->encode_instances_total_count);
+#endif
 
     EB_CALLOC_ARRAY(context_ptr->picture_number_array, context_ptr->encode_instances_total_count);
 
@@ -160,7 +170,11 @@ When tpl_opt_flag is set to 0, none of the actions mentioned above could be cons
 ***************************************************************************************/
 void set_tpl_extended_controls(PictureParentControlSet *pcs_ptr, uint8_t tpl_level) {
     TplControls        *tpl_ctrls = &pcs_ptr->tpl_ctrls;
+#if FIX_REMOVE_SCS_WRAPPER
+    SequenceControlSet *scs_ptr = pcs_ptr->scs_ptr;
+#else
     SequenceControlSet *scs_ptr   = (SequenceControlSet *)pcs_ptr->scs_wrapper_ptr->object_ptr;
+#endif
     switch (tpl_level) {
     case 0:
         tpl_ctrls->enable                       = 0;
@@ -405,6 +419,45 @@ Output  : Pre-Analysis signal(s)
 EbErrorType signal_derivation_pre_analysis_oq_scs(SequenceControlSet *scs_ptr) {
     EbErrorType return_error = EB_ErrorNone;
 
+#if CLN_SCS_SIG_DERIV
+    // Set the SCD Mode
+    scs_ptr->scd_mode = scs_ptr->static_config.scene_change_detection == 0 ? SCD_MODE_0
+        : SCD_MODE_1;
+
+    // initialize sequence level enable_superres
+    scs_ptr->seq_header.enable_superres = scs_ptr->static_config.superres_mode >
+        SUPERRES_NONE
+        ? 1
+        : 0;
+    if (scs_ptr->inter_intra_compound == DEFAULT)
+        scs_ptr->seq_header.enable_interintra_compound = 1;
+    else
+        scs_ptr->seq_header.enable_interintra_compound = scs_ptr->inter_intra_compound;
+    // Enable/Disable Filter Intra
+    // seq_header.filter_intra_level | Settings
+    // 0                             | Disable
+    // 1                             | Enable
+    if (scs_ptr->filter_intra_level == DEFAULT)
+        scs_ptr->seq_header.filter_intra_level = 1;
+    else
+        scs_ptr->seq_header.filter_intra_level = scs_ptr->filter_intra_level;
+    // Set compound mode      Settings
+    // 0                 OFF: No compond mode search : AVG only
+    // 1                 ON: full
+    if (scs_ptr->compound_level == DEFAULT)
+        scs_ptr->compound_mode = 1;
+    else
+        scs_ptr->compound_mode = scs_ptr->compound_level;
+    if (scs_ptr->compound_mode) {
+        scs_ptr->seq_header.order_hint_info.enable_jnt_comp = 1; //DISTANCE
+        scs_ptr->seq_header.enable_masked_compound = 1; //DIFF+WEDGE
+    }
+    else {
+        scs_ptr->seq_header.order_hint_info.enable_jnt_comp = 0;
+        scs_ptr->seq_header.enable_masked_compound = 0;
+    }
+#endif
+
     if (scs_ptr->enable_intra_edge_filter == DEFAULT)
         scs_ptr->seq_header.enable_intra_edge_filter = 1;
     else
@@ -434,6 +487,32 @@ EbErrorType signal_derivation_pre_analysis_oq_scs(SequenceControlSet *scs_ptr) {
         scs_ptr->seq_header.enable_warped_motion = 1;
     } else
         scs_ptr->seq_header.enable_warped_motion = (uint8_t)scs_ptr->enable_warped_motion;
+
+#if CLN_SCS_CTOR
+    scs_ptr->seq_header.frame_width_bits = 16;
+    scs_ptr->seq_header.frame_height_bits = 16;
+    scs_ptr->seq_header.frame_id_numbers_present_flag = 0;
+    scs_ptr->seq_header.frame_id_length = FRAME_ID_LENGTH;
+    scs_ptr->seq_header.delta_frame_id_length = DELTA_FRAME_ID_LENGTH;
+
+    // 0 - disable dual interpolation filter
+    // 1 - enable vertical and horiz filter selection
+    scs_ptr->seq_header.enable_dual_filter = 0;
+
+    // 0 - force off
+    // 1 - force on
+    // 2 - adaptive
+    scs_ptr->seq_header.seq_force_screen_content_tools = 2;
+
+    // 0 - Not to force. MV can be in 1/4 or 1/8
+    // 1 - force to integer
+    // 2 - adaptive
+    scs_ptr->seq_header.seq_force_integer_mv = 2;
+
+    scs_ptr->seq_header.order_hint_info.enable_ref_frame_mvs = 1;
+    scs_ptr->seq_header.order_hint_info.enable_order_hint = 1;
+    scs_ptr->seq_header.order_hint_info.order_hint_bits = 7;
+#endif
 
     return return_error;
 }
@@ -968,8 +1047,9 @@ void *resource_coordination_kernel(void *input_ptr) {
     EbObjectWrapper *pcs_wrapper_ptr;
 
     PictureParentControlSet *pcs_ptr;
-
+#if !FIX_USE_ONE_SCS
     EbObjectWrapper    *prev_scs_wrapper_ptr;
+#endif
     SequenceControlSet *scs_ptr;
 
     EbObjectWrapper             *eb_input_wrapper_ptr;
@@ -982,14 +1062,17 @@ void *resource_coordination_kernel(void *input_ptr) {
     EbObjectWrapper             *reference_picture_wrapper_ptr;
 
     Bool end_of_sequence_flag = FALSE;
-
+#if !CLN_SCS_SIG_DERIV
     uint32_t         input_size           = 0;
+#endif
     EbObjectWrapper *prev_pcs_wrapper_ptr = 0;
 
     for (;;) {
         // Tie instance_index to zero for now...
         uint32_t            instance_index = 0;
+#if !FIX_USE_ONE_SCS
         SequenceControlSet *scs_tmp;
+#endif
         // Get the input command containing 2 input buffers: y8b & rest(uv8b+yuvbitInc)
         EB_GET_FULL_OBJECT(context_ptr->input_cmd_fifo_ptr, &eb_input_cmd_wrapper);
 
@@ -1000,7 +1083,43 @@ void *resource_coordination_kernel(void *input_ptr) {
         uint8_t            *buff_y8b   = ((EbPictureBufferDesc *)y8b_header->p_buffer)->buffer_y;
         eb_input_wrapper_ptr           = input_cmd_obj->eb_input_wrapper_ptr;
         eb_input_ptr                   = (EbBufferHeaderType *)eb_input_wrapper_ptr->object_ptr;
+#if CLN_SCS_SIG_DERIV
 
+        // Set the SequenceControlSet
+        scs_ptr = context_ptr->scs_instance_array[instance_index]->scs_ptr;
+
+        if (context_ptr->scs_instance_array[instance_index]->encode_context_ptr->initial_picture) {
+            // Update picture width, picture height, cropping right offset, cropping bottom offset, and conformance windows
+            scs_ptr->seq_header.max_frame_width = scs_ptr->max_input_luma_width;
+            scs_ptr->seq_header.max_frame_height = scs_ptr->max_input_luma_height;
+            scs_ptr->chroma_width = (scs_ptr->max_input_luma_width >> 1);
+            scs_ptr->chroma_height = (scs_ptr->max_input_luma_height >> 1);
+
+            scs_ptr->pad_right = scs_ptr->max_input_pad_right;
+            scs_ptr->pad_bottom = scs_ptr->max_input_pad_bottom;
+
+            // Pre-Analysis Signal(s) derivation
+            if (scs_ptr->static_config.pass == ENC_FIRST_PASS)
+                first_pass_signal_derivation_pre_analysis_scs(scs_ptr);
+            else
+                signal_derivation_pre_analysis_oq_scs(scs_ptr);
+
+            // Init SB Params
+            const uint32_t input_size = scs_ptr->seq_header.max_frame_width * scs_ptr->seq_header.max_frame_height;
+            derive_input_resolution(&scs_ptr->input_resolution, input_size);
+
+            sb_params_init(scs_ptr);
+            sb_geom_init(scs_ptr);
+
+            // sf_identity
+            svt_av1_setup_scale_factors_for_frame(&scs_ptr->sf_identity,
+                                                    scs_ptr->max_input_luma_width,
+                                                    scs_ptr->max_input_luma_height,
+                                                    scs_ptr->max_input_luma_width,
+                                                    scs_ptr->max_input_luma_height);
+        }
+#else
+#if !FIX_USE_ONE_SCS
         //static  int rc_count = 0;
         // printf("rc count %i \n", rc_count++);
 
@@ -1008,6 +1127,7 @@ void *resource_coordination_kernel(void *input_ptr) {
         //   prepare a new scs_ptr containing the new changes and update the state
         //   of the previous Active SequenceControlSet
         svt_block_on_mutex(context_ptr->scs_instance_array[instance_index]->config_mutex);
+#endif
         if (context_ptr->scs_instance_array[instance_index]->encode_context_ptr->initial_picture) {
             // Update picture width, picture height, cropping right offset, cropping bottom offset, and conformance windows
             context_ptr->scs_instance_array[instance_index]->scs_ptr->seq_header.max_frame_width =
@@ -1030,6 +1150,19 @@ void *resource_coordination_kernel(void *input_ptr) {
                 context_ptr->scs_instance_array[instance_index]
                     ->scs_ptr->seq_header.max_frame_height;
 
+#if FIX_USE_ONE_SCS
+            context_ptr->sequence_control_set_active_array[instance_index] = context_ptr->scs_instance_array[instance_index]->scs_ptr;
+            scs_ptr = context_ptr->sequence_control_set_active_array[instance_index];
+
+            // Set the SCD Mode
+            scs_ptr->scd_mode = scs_ptr->static_config.scene_change_detection == 0 ? SCD_MODE_0
+                : SCD_MODE_1;
+            // Pre-Analysis Signal(s) derivation
+            if (scs_ptr->static_config.pass == ENC_FIRST_PASS)
+                first_pass_signal_derivation_pre_analysis_scs(scs_ptr);
+            else
+                signal_derivation_pre_analysis_oq_scs(scs_ptr);
+#else
             // Copy previous Active SequenceControlSetPtr to a place holder
             prev_scs_wrapper_ptr = context_ptr->sequence_control_set_active_array[instance_index];
 
@@ -1053,6 +1186,7 @@ void *resource_coordination_kernel(void *input_ptr) {
             else
                 signal_derivation_pre_analysis_oq_scs(scs_tmp);
 
+#if !FIX_USE_ONE_SCS
             // Disable releaseFlag of new SequenceControlSet
             svt_object_release_disable(
                 context_ptr->sequence_control_set_active_array[instance_index]);
@@ -1066,8 +1200,15 @@ void *resource_coordination_kernel(void *input_ptr) {
                     svt_release_object(prev_scs_wrapper_ptr);
                 }
             }
+#endif
+#endif
         }
+#if FIX_USE_ONE_SCS
+        // Set the current SequenceControlSet
+        scs_ptr = context_ptr->sequence_control_set_active_array[instance_index];
+#else
         svt_release_mutex(context_ptr->scs_instance_array[instance_index]->config_mutex);
+
         // Seque Control Set is released by Rate Control after passing through MDC->MD->ENCDEC->Packetization->RateControl,
         // in the PictureManager after receiving the reference and in PictureManager after receiving the feedback
         svt_object_inc_live_count(context_ptr->sequence_control_set_active_array[instance_index],
@@ -1077,7 +1218,7 @@ void *resource_coordination_kernel(void *input_ptr) {
         scs_ptr = (SequenceControlSet *)context_ptr
                       ->sequence_control_set_active_array[instance_index]
                       ->object_ptr;
-
+#endif
         // Init SB Params
         if (context_ptr->scs_instance_array[instance_index]->encode_context_ptr->initial_picture) {
             derive_input_resolution(&scs_ptr->input_resolution, input_size);
@@ -1123,6 +1264,7 @@ void *resource_coordination_kernel(void *input_ptr) {
                                                   scs_ptr->max_input_luma_width,
                                                   scs_ptr->max_input_luma_height);
         }
+#endif
         // Since at this stage we do not know the prediction structure and the location of ALT_REF pictures,
         // for every picture (except first picture), we allocate two: 1. original picture, 2. potential Overlay picture.
         // In Picture Decision Process, where the overlay frames are known, they extra pictures are released
@@ -1142,6 +1284,14 @@ void *resource_coordination_kernel(void *input_ptr) {
 
             pcs_ptr = (PictureParentControlSet *)pcs_wrapper_ptr->object_ptr;
 
+            // - p_pcs_wrapper_ptr is a direct copy of pcs_wrapper_ptr (live_count == 1).
+            // - Most of p_pcs_wrapper_ptr in pre-allocated overlay candidates will be released & recycled to empty fifo
+            //     by altref candidate's svt_release_object(pcs_ptr->overlay_ppcs_ptr->p_pcs_wrapper_ptr) in PictureDecision.
+            // - The recycled ppcs may be assigned a new picture_number in ResourceCoordination.
+            // - If the to-be-removed overlay candidate runs in picture_decision_kernel() after above release/recycle/assign,
+            //     picture_decision_reorder_queue will update by the same picture_number (of the same ppcs ptr) twice and CHECK_REPORT_ERROR_NC occur.
+            // - So need ppcs live_count + 1 before post ResourceCoordinationResults, and release ppcs before end of PictureDecision,
+            //     to avoid recycling overlay candidate's ppcs to empty fifo too early.
             pcs_ptr->p_pcs_wrapper_ptr = pcs_wrapper_ptr;
 
             // reallocate sb_param_array and sb_geom for super-res mode on
@@ -1204,9 +1354,10 @@ void *resource_coordination_kernel(void *input_ptr) {
             pcs_ptr->superres_total_recode_loop = 0;
             pcs_ptr->superres_recode_loop       = 0;
             svt_av1_get_time(&pcs_ptr->start_time_seconds, &pcs_ptr->start_time_u_seconds);
-
+#if !FIX_REMOVE_SCS_WRAPPER
             pcs_ptr->scs_wrapper_ptr =
                 context_ptr->sequence_control_set_active_array[instance_index];
+#endif
             pcs_ptr->scs_ptr                   = scs_ptr;
             pcs_ptr->input_picture_wrapper_ptr = input_picture_wrapper_ptr;
             //store the y8b warapper to be used for release later
@@ -1233,6 +1384,9 @@ void *resource_coordination_kernel(void *input_ptr) {
                 pcs_ptr->input_ptr = (EbBufferHeaderType *)input_pic_wrapper_ptr->object_ptr;
                 pcs_ptr->enhanced_picture_ptr = (EbPictureBufferDesc *)pcs_ptr->input_ptr->p_buffer;
                 pcs_ptr->input_picture_wrapper_ptr = input_pic_wrapper_ptr;
+
+                // overlay does NOT use y8b buffer, set to NULL to avoid eb_y8b_wrapper_ptr->live_count disorder
+                pcs_ptr->eb_y8b_wrapper_ptr        = NULL;
             }
             // Set Picture Control Flags
             pcs_ptr->idr_flag = scs_ptr->encode_context_ptr->initial_picture ||
@@ -1321,9 +1475,10 @@ void *resource_coordination_kernel(void *input_ptr) {
                 svt_object_inc_live_count(pcs_ptr->pa_reference_picture_wrapper_ptr, 1);
             else
                 svt_object_inc_live_count(pcs_ptr->pa_reference_picture_wrapper_ptr, 2);
-            // y8b follows longest life cycle of pa ref and input. so it needs to build on top of live count of pa ref
-            if (!pcs_ptr->is_overlay)
+            if (pcs_ptr->eb_y8b_wrapper_ptr) {
+                // y8b follows longest life cycle of pa ref and input. so it needs to build on top of live count of pa ref
                 svt_object_inc_live_count(pcs_ptr->eb_y8b_wrapper_ptr, 2);
+            }
             if (scs_ptr->static_config.restricted_motion_vector) {
                 struct PictureParentControlSet *ppcs_ptr = pcs_ptr;
                 Av1Common *const                cm       = ppcs_ptr->av1_cm;
@@ -1386,6 +1541,12 @@ void *resource_coordination_kernel(void *input_ptr) {
                 svt_get_empty_object(context_ptr->resource_coordination_results_output_fifo_ptr,
                                      &output_wrapper_ptr);
                 out_results_ptr = (ResourceCoordinationResults *)output_wrapper_ptr->object_ptr;
+
+                if (scs_ptr->static_config.enable_overlays == TRUE) {
+                    // ppcs live_count + 1 for PictureAnalysis & PictureDecision, will svt_release_object(ppcs) at the end of picture_decision_kernel.
+                    svt_object_inc_live_count(prev_pcs_wrapper_ptr, 1);
+                }
+
                 out_results_ptr->pcs_wrapper_ptr = prev_pcs_wrapper_ptr;
                 // Post the finished Results Object
                 svt_post_full_object(output_wrapper_ptr);

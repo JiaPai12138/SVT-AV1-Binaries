@@ -19,7 +19,52 @@ static void svt_sequence_control_set_dctor(EbPtr p) {
     EB_FREE_ARRAY(obj->sb_params_array);
     EB_FREE_ARRAY(obj->sb_geom);
 }
+#if CLN_SCS_CTOR
+/**************************************************************************************************
+    General notes on how Sequence Control Sets (SCS) are used.
 
+    SequenceControlSetInstance
+        is the primary copy that interacts with the API in real-time.  When a
+        change happens, the changeFlag is signaled so that appropriate action can
+        be taken.  There is one scsInstance per stream/encode instance.  The scsInstance
+        owns the encodeContext
+
+    encodeContext
+        has context type variables (i.e. non-config) that keep track of global parameters.
+
+    SequenceControlSets
+        general SCSs are controled by a system resource manager.  They are kept completely
+        separate from the instances.  In general there is one active SCS at a time.  When the
+        changeFlag is signaled, the old active SCS is no longer used for new input pictures.
+        A fresh copy of the scsInstance is made to a new SCS, which becomes the active SCS.  The
+        old SCS will eventually be released back into the SCS pool when its current pictures are
+        finished encoding.
+
+    Motivations
+        The whole reason for this structure is due to the nature of the pipeline.  We have to
+        take great care not to have pipeline mismanagement.  Once an object enters use in the
+        pipeline, it cannot be changed on the fly or you will have pipeline coherency problems.
+
+    **** Currently, real-time updates to the SCS are not supported.  Therefore, each instance
+    has a single SCS (from the SequenceControlSetInstance) that is used for encoding the entire
+    stream.  At the resource coordination kernel, a pointer to the SequenceControlSetInstance
+    is saved in the PCS, that is not managed by an SRM.
+ ***************************************************************************************************/
+EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *scs, EbPtr object_init_data_ptr) {
+
+    UNUSED(object_init_data_ptr);
+    scs->dctor = svt_sequence_control_set_dctor;
+
+    // Allocation will happen in resource-coordination
+    scs->sb_params_array = NULL;
+
+    scs->mvrate_set = 0;
+    scs->bits_for_picture_order_count = 16;
+    scs->film_grain_random_seed = 7391;
+
+    return EB_ErrorNone;
+}
+#else
 /**************************************************************************************************
     General notes on how Sequence Control Sets (SCS) are used.
 
@@ -51,9 +96,9 @@ EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *scs_ptr, EbPtr obj
     uint32_t segment_index;
     scs_ptr->mvrate_set = 0;
     scs_ptr->dctor      = svt_sequence_control_set_dctor;
-
+#if !CLN_SCS_SIG_DERIV
     scs_ptr->sb_sz = 64;
-
+#endif
     // Segments
     for (segment_index = 0; segment_index < MAX_TEMPORAL_LAYERS; ++segment_index) {
         scs_ptr->me_segment_column_count_array[segment_index]   = 1;
@@ -224,7 +269,8 @@ EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *scs_ptr, EbPtr obj
 
     return EB_ErrorNone;
 }
-
+#endif
+#if !FIX_USE_ONE_SCS
 EbErrorType svt_sequence_control_set_creator(EbPtr *object_dbl_ptr, EbPtr object_init_data_ptr) {
     SequenceControlSet *obj;
 
@@ -396,7 +442,7 @@ EbErrorType copy_sequence_control_set(SequenceControlSet *dst, SequenceControlSe
     dst->calculate_variance            = src->calculate_variance;
     return EB_ErrorNone;
 }
-
+#endif
 extern EbErrorType derive_input_resolution(EbInputResolution *input_resolution,
                                            uint32_t           inputSize) {
     EbErrorType return_error = EB_ErrorNone;
@@ -422,10 +468,19 @@ static void svt_sequence_control_set_instance_dctor(EbPtr p) {
     EbSequenceControlSetInstance *obj = (EbSequenceControlSetInstance *)p;
     EB_DELETE(obj->encode_context_ptr);
     EB_DELETE(obj->scs_ptr);
+#if !FIX_USE_ONE_SCS
     EB_DESTROY_MUTEX(obj->config_mutex);
+#endif
 }
 
 EbErrorType svt_sequence_control_set_instance_ctor(EbSequenceControlSetInstance *object_ptr) {
+#if CLN_SCS_CTOR
+    object_ptr->dctor = svt_sequence_control_set_instance_dctor;
+
+    EB_NEW(object_ptr->encode_context_ptr, encode_context_ctor, NULL);
+    EB_NEW(object_ptr->scs_ptr, svt_sequence_control_set_ctor, NULL);
+    object_ptr->scs_ptr->encode_context_ptr = object_ptr->encode_context_ptr;
+#else
     EbSequenceControlSetInitData scs_init_data;
 
     object_ptr->dctor = svt_sequence_control_set_instance_dctor;
@@ -436,7 +491,10 @@ EbErrorType svt_sequence_control_set_instance_ctor(EbSequenceControlSetInstance 
     scs_init_data.sb_size = 64;
 
     EB_NEW(object_ptr->scs_ptr, svt_sequence_control_set_ctor, (void *)&scs_init_data);
+#endif
+#if !FIX_USE_ONE_SCS
     EB_CREATE_MUTEX(object_ptr->config_mutex);
+#endif
 
     return EB_ErrorNone;
 }

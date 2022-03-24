@@ -84,10 +84,10 @@
   **************************************/
 #define EB_EncodeInstancesTotalCount                    1
 #define EB_ComputeSegmentInitCount                      1
-
+#if !FIX_USE_ONE_SCS
   // Config Set Initial Count
 #define EB_SequenceControlSetPoolInitCount              3
-
+#endif
 // Process Instantiation Initial Counts
 #define EB_ResourceCoordinationProcessInitCount         1
 #define EB_PictureDecisionProcessInitCount              1
@@ -1062,7 +1062,9 @@ static void svt_enc_handle_dctor(EbPtr p)
     EbEncHandle *enc_handle_ptr = (EbEncHandle *)p;
     svt_enc_handle_stop_threads(enc_handle_ptr);
     EB_FREE_PTR_ARRAY(enc_handle_ptr->app_callback_ptr_array, enc_handle_ptr->encode_instance_total_count);
+#if !FIX_USE_ONE_SCS
     EB_DELETE(enc_handle_ptr->scs_pool_ptr);
+#endif
     EB_DELETE_PTR_ARRAY(enc_handle_ptr->picture_parent_control_set_pool_ptr_array, enc_handle_ptr->encode_instance_total_count);
     EB_DELETE_PTR_ARRAY(enc_handle_ptr->me_pool_ptr_array, enc_handle_ptr->encode_instance_total_count);
     EB_DELETE_PTR_ARRAY(enc_handle_ptr->picture_control_set_pool_ptr_array, enc_handle_ptr->encode_instance_total_count);
@@ -1138,9 +1140,10 @@ static EbErrorType svt_enc_handle_ctor(
 
     enc_handle_ptr->encode_instance_total_count                           = EB_EncodeInstancesTotalCount;
     enc_handle_ptr->compute_segments_total_count_array                    = EB_ComputeSegmentInitCount;
+#if !FIX_USE_ONE_SCS
     // Config Set Count
     enc_handle_ptr->scs_pool_total_count                 = EB_SequenceControlSetPoolInitCount;
-
+#endif
     // Initialize Callbacks
     EB_ALLOC_PTR_ARRAY(enc_handle_ptr->app_callback_ptr_array, enc_handle_ptr->encode_instance_total_count);
     EB_MALLOC(enc_handle_ptr->app_callback_ptr_array[0], sizeof(EbCallback));
@@ -1150,6 +1153,7 @@ static EbErrorType svt_enc_handle_ctor(
     // Initialize Sequence Control Set Instance Array
     EB_ALLOC_PTR_ARRAY(enc_handle_ptr->scs_instance_array, enc_handle_ptr->encode_instance_total_count);
     EB_NEW(enc_handle_ptr->scs_instance_array[0], svt_sequence_control_set_instance_ctor);
+
     return EB_ErrorNone;
 }
 
@@ -1462,15 +1466,16 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component)
     asm_set_convolve_hbd_asm_table();
 
     init_intra_predictors_internal();
+#if !FIX_USE_ONE_SCS
     EbSequenceControlSetInitData scs_init;
     scs_init.sb_size = enc_handle_ptr->scs_instance_array[0]->scs_ptr->super_block_size;
-
+#endif
     build_blk_geom(enc_handle_ptr->scs_instance_array[0]->scs_ptr->geom_idx);
 
     svt_av1_init_me_luts();
     init_fn_ptr();
     svt_av1_init_wedge_masks();
-
+#if !FIX_USE_ONE_SCS
     /************************************
     * Sequence Control Set
     ************************************/
@@ -1482,7 +1487,7 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component)
         svt_sequence_control_set_creator,
         &scs_init,
         NULL);
-
+#endif
     /************************************
     * Picture Control Set: Parent
     ************************************/
@@ -1508,10 +1513,16 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component)
         input_data.hbd_mode_decision = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->enable_hbd_mode_decision;
         input_data.film_grain_noise_level = enc_handle_ptr->scs_instance_array[0]->scs_ptr->static_config.film_grain_denoise_strength;
         input_data.bit_depth = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->static_config.encoder_bit_depth;
+#if !CLN_SCS_CTOR
         input_data.ext_block_flag = (uint8_t)enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->ext_block_flag;
+#endif
         input_data.log2_tile_rows = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->static_config.tile_rows;
         input_data.log2_tile_cols = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->static_config.tile_columns;
+#if CLN_SCS_SIG_DERIV
+        input_data.log2_sb_sz = (enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->super_block_size == 128) ? 5 : 4;
+#else
         input_data.log2_sb_sz = (scs_init.sb_size == 128) ? 5 : 4;
+#endif
         input_data.is_16bit_pipeline = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->is_16bit_pipeline;
         input_data.non_m8_pad_w = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->max_input_pad_right;
         input_data.non_m8_pad_h = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->max_input_pad_bottom;
@@ -1607,7 +1618,11 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component)
             input_data.film_grain_noise_level = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->static_config.film_grain_denoise_strength;
             input_data.color_format = color_format;
             input_data.sb_sz = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->sb_sz;
+#if CLN_SCS_SIG_DERIV
+            input_data.sb_size_pix = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->super_block_size;
+#else
             input_data.sb_size_pix = scs_init.sb_size;
+#endif
             input_data.max_depth = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->max_sb_depth;
             input_data.hbd_mode_decision = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->enable_hbd_mode_decision;
             input_data.cdf_mode = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->cdf_mode;
@@ -1669,7 +1684,11 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component)
             input_data.film_grain_noise_level = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->static_config.film_grain_denoise_strength;
             input_data.color_format = color_format;
             input_data.sb_sz = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->sb_sz;
+#if CLN_SCS_SIG_DERIV
+            input_data.sb_size_pix = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->super_block_size;
+#else
             input_data.sb_size_pix = scs_init.sb_size;
+#endif
             input_data.max_depth = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->max_sb_depth;
             input_data.hbd_mode_decision = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->enable_hbd_mode_decision;
             input_data.cdf_mode = enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->cdf_mode;
@@ -2095,11 +2114,19 @@ EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component)
     {
         // Initialize the various Picture types
         instance_index = 0;
-
+#if FIX_SCD
+        EB_NEW(
+            enc_handle_ptr->picture_decision_context_ptr,
+            picture_decision_context_ctor,
+            enc_handle_ptr,
+            enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->static_config.scene_change_detection ||
+            enc_handle_ptr->scs_instance_array[instance_index]->scs_ptr->vq_ctrls.sharpness_ctrls.scene_transition);
+#else
         EB_NEW(
             enc_handle_ptr->picture_decision_context_ptr,
             picture_decision_context_ctor,
             enc_handle_ptr);
+#endif
     }
 
     // Motion Analysis Context
@@ -2938,7 +2965,11 @@ void derive_vq_params(SequenceControlSet* scs_ptr) {
     else {
 
         // Sharpness
+#if FIX_SCD
+        vq_ctrl->sharpness_ctrls.scene_transition = 1;
+#else
         vq_ctrl->sharpness_ctrls.scene_transition = 0;
+#endif
         vq_ctrl->sharpness_ctrls.unipred_bias     = 0;
         vq_ctrl->sharpness_ctrls.ifs              = 0;
         vq_ctrl->sharpness_ctrls.cdef             = 0;
@@ -2953,6 +2984,11 @@ void derive_vq_params(SequenceControlSet* scs_ptr) {
 #endif
         vq_ctrl->stability_ctrls.depth_refinement = 0;
     }
+#if FIX_SCD
+    // Do not use scene_transition if LD or 1st pass or middle pass
+    if (scs_ptr->static_config.pred_structure != PRED_RANDOM_ACCESS || scs_ptr->static_config.pass == ENC_FIRST_PASS || scs_ptr->static_config.pass == ENC_MIDDLE_PASS)
+        vq_ctrl->sharpness_ctrls.scene_transition = 0;
+#endif
 }
 /*
  * Derive TF Params
@@ -3517,7 +3553,21 @@ void set_param_based_on_input(SequenceControlSet *scs_ptr)
             scs_ptr->super_block_size = 64;
     if (scs_ptr->static_config.rate_control_mode && !(scs_ptr->static_config.pass == ENC_MIDDLE_PASS || scs_ptr->static_config.pass == ENC_LAST_PASS) && !scs_ptr->lap_rc)
         scs_ptr->super_block_size = 64;
-
+#if CLN_SCS_SIG_DERIV
+    // Set config info related to SB size
+    if (scs_ptr->super_block_size == 128) {
+        scs_ptr->seq_header.sb_size = BLOCK_128X128;
+        scs_ptr->sb_size_pix = 128;
+        scs_ptr->seq_header.sb_mi_size = 32; // Size of the superblock in units of MI blocks
+        scs_ptr->seq_header.sb_size_log2 = 5;
+    }
+    else {
+        scs_ptr->seq_header.sb_size = BLOCK_64X64;
+        scs_ptr->sb_size_pix = 64;
+        scs_ptr->seq_header.sb_mi_size = 16; // Size of the superblock in units of MI blocks
+        scs_ptr->seq_header.sb_size_log2 = 4;
+    }
+#endif
     // scs_ptr->static_config.hierarchical_levels = (scs_ptr->static_config.rate_control_mode > 1) ? 3 : scs_ptr->static_config.hierarchical_levels;
     if (scs_ptr->static_config.restricted_motion_vector && scs_ptr->super_block_size == 128) {
         scs_ptr->static_config.restricted_motion_vector = FALSE;
@@ -3798,11 +3848,44 @@ void copy_api_from_app(
         SVT_WARN("TPL is disabled in low delay applications.\n");
     }
     scs_ptr->enable_qp_scaling_flag = 1;
+#if !CLN_SCS_CTOR
     scs_ptr->max_blk_size = (uint8_t)64;
     scs_ptr->min_blk_size = (uint8_t)8;
     scs_ptr->max_intra_size = (uint8_t)32;
     scs_ptr->min_intra_size = (uint8_t)8;
+#endif
     scs_ptr->max_ref_count = 1;
+#if CLN_SCS_CTOR
+    scs_ptr->reference_count = 4;
+
+    // Set Picture Parameters for statistics gathering
+    scs_ptr->picture_analysis_number_of_regions_per_width =
+        HIGHER_THAN_CLASS_1_REGION_SPLIT_PER_WIDTH;
+    scs_ptr->picture_analysis_number_of_regions_per_height =
+        HIGHER_THAN_CLASS_1_REGION_SPLIT_PER_HEIGHT;
+
+    scs_ptr->enable_warped_motion        = DEFAULT;
+    scs_ptr->enable_global_motion        = TRUE;
+    scs_ptr->sg_filter_mode              = DEFAULT;
+    scs_ptr->wn_filter_mode              = DEFAULT;
+    scs_ptr->inter_intra_compound        = DEFAULT;
+    scs_ptr->enable_paeth                = DEFAULT;
+    scs_ptr->enable_smooth               = DEFAULT;
+    scs_ptr->spatial_sse_full_loop_level = DEFAULT;
+    scs_ptr->over_bndry_blk              = DEFAULT;
+    scs_ptr->new_nearest_comb_inject     = DEFAULT;
+    scs_ptr->frame_end_cdf_update        = DEFAULT;
+    scs_ptr->disable_cfl_flag            = DEFAULT;
+    scs_ptr->obmc_level                  = DEFAULT;
+    scs_ptr->rdoq_level                  = DEFAULT;
+    scs_ptr->pred_me                     = DEFAULT;
+    scs_ptr->bipred_3x3_inject           = DEFAULT;
+    scs_ptr->compound_level              = DEFAULT;
+    scs_ptr->filter_intra_level          = DEFAULT;
+    scs_ptr->enable_intra_edge_filter    = DEFAULT;
+    scs_ptr->pic_based_rate_est          = DEFAULT;
+    scs_ptr->block_mean_calc_prec        = BLOCK_MEAN_PREC_SUB;
+#endif
     scs_ptr->palette_level = DEFAULT;
     scs_ptr->intra_angle_delta = DEFAULT;
     scs_ptr->intrabc_mode = DEFAULT;
@@ -3930,6 +4013,7 @@ void copy_api_from_app(
 
     // Rate Control
     scs_ptr->static_config.scene_change_detection = ((EbSvtAv1EncConfiguration*)config_struct)->scene_change_detection;
+
     scs_ptr->static_config.rate_control_mode = ((EbSvtAv1EncConfiguration*)config_struct)->rate_control_mode;
 #if !FTR_CBR
     if (scs_ptr->static_config.rate_control_mode == 2) {
@@ -4163,10 +4247,10 @@ EB_API EbErrorType svt_av1_enc_set_parameter(
 
     EbEncHandle        *enc_handle  = (EbEncHandle*)svt_enc_component->p_component_private;
     uint32_t              instance_index = 0;
-
+#if !FIX_USE_ONE_SCS
     // Acquire Config Mutex
     svt_block_on_mutex(enc_handle->scs_instance_array[instance_index]->config_mutex);
-
+#endif
     copy_api_from_app(
         enc_handle->scs_instance_array[instance_index]->scs_ptr,
         (EbSvtAv1EncConfiguration*)config_struct);
@@ -4193,7 +4277,9 @@ EB_API EbErrorType svt_av1_enc_set_parameter(
         prediction_structure_group_ctor,
         enc_handle->scs_instance_array[instance_index]->scs_ptr);
     if (!enc_handle->scs_instance_array[instance_index]->encode_context_ptr->prediction_structure_group_ptr) {
+#if !FIX_USE_ONE_SCS
         svt_release_mutex(enc_handle->scs_instance_array[instance_index]->config_mutex);
+#endif
         return EB_ErrorInsufficientResources;
     }
     // Set the Prediction Structure
@@ -4209,9 +4295,10 @@ EB_API EbErrorType svt_av1_enc_set_parameter(
 
     svt_av1_print_lib_params(
         enc_handle->scs_instance_array[instance_index]->scs_ptr);
-
+#if !FIX_USE_ONE_SCS
     // Release Config Mutex
     svt_release_mutex(enc_handle->scs_instance_array[instance_index]->config_mutex);
+#endif
 
     return return_error;
 }

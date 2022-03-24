@@ -167,12 +167,13 @@ typedef struct SequenceControlSet {
     uint16_t max_block_cnt;
     /*!< Restoration Unit parameters set for the stream */
     int32_t rest_units_per_tile;
+#if !CLN_SCS_CTOR
     /*!< Block limits */
     uint8_t max_blk_size;
     uint8_t min_blk_size;
     uint8_t max_intra_size;
     uint8_t min_intra_size;
-
+#endif
     /*!< Sub picture reagions for picture analysis */
     uint32_t picture_analysis_number_of_regions_per_width;
     uint32_t picture_analysis_number_of_regions_per_height;
@@ -321,11 +322,12 @@ typedef struct SequenceControlSet {
     *
     * Default is -1. */
     int new_nearest_comb_inject;
-
+#if !CLN_SCS_CTOR
     /* nsq table
     *
     * Default is -1. */
     int nsq_table;
+#endif
     /* frame end cdf update
     *
     * Default is -1. */
@@ -396,12 +398,12 @@ typedef struct SequenceControlSet {
     *
     * Default is - 1. */
     int pic_based_rate_est;
-
+#if !CLN_SCS_CTOR
     /* Flag to enable the use of non-swaure partitions
     *
     * Default is 1. */
     Bool ext_block_flag;
-
+#endif
     /* Flag to control intraBC mode
     *  0      OFF
     *  1      slow
@@ -445,22 +447,25 @@ typedef struct SequenceControlSet {
     uint8_t calculate_variance;
 
 } SequenceControlSet;
-
+#if !CLN_SCS_CTOR
 typedef struct EbSequenceControlSetInitData {
     EncodeContext *encode_context_ptr;
     int32_t        sb_size;
 } EbSequenceControlSetInitData;
-
+#endif
 typedef struct EbSequenceControlSetInstance {
     EbDctor             dctor;
     EncodeContext      *encode_context_ptr;
     SequenceControlSet *scs_ptr;
+#if !FIX_USE_ONE_SCS
     EbHandle            config_mutex;
+#endif
 } EbSequenceControlSetInstance;
 
 /**************************************
      * Extern Function Declarations
      **************************************/
+#if !FIX_USE_ONE_SCS
 extern EbErrorType svt_sequence_control_set_creator(EbPtr *object_dbl_ptr,
                                                     EbPtr  object_init_data_ptr);
 
@@ -468,7 +473,7 @@ extern EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *object,
                                                  EbPtr               object_init_data_ptr);
 
 extern EbErrorType copy_sequence_control_set(SequenceControlSet *dst, SequenceControlSet *src);
-
+#endif
 extern EbErrorType svt_sequence_control_set_instance_ctor(EbSequenceControlSetInstance *object_ptr);
 
 extern EbErrorType sb_params_init(SequenceControlSet *scs_ptr);
