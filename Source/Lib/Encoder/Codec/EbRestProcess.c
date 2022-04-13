@@ -19,6 +19,7 @@
 #include "EbPictureDemuxResults.h"
 #include "EbReferenceObject.h"
 #include "EbPictureControlSet.h"
+#include "EbResourceCoordinationProcess.h"
 
 /**************************************
  * Rest Context
@@ -79,8 +80,9 @@ static void rest_context_dctor(EbPtr p) {
     EB_FREE_ALIGNED(obj->rst_tmpbuf);
     EB_FREE_ARRAY(obj);
 }
-uint8_t get_enable_restoration(EncMode enc_mode, int8_t config_enable_restoration,
-                               uint8_t input_resolution, uint8_t fast_decode);
+
+
+
 /******************************************************
  * Rest Context Constructor
  ******************************************************/
@@ -106,10 +108,11 @@ EbErrorType rest_context_ctor(EbThreadContext   *thread_context_ptr,
         enc_handle_ptr->picture_demux_results_resource_ptr, demux_index);
 
     Bool is_16bit = scs_ptr->is_16bit_pipeline;
+
     if (get_enable_restoration(init_data_ptr->enc_mode,
-                               config->enable_restoration_filtering,
-                               scs_ptr->input_resolution,
-                               scs_ptr->static_config.fast_decode)) {
+        config->enable_restoration_filtering,
+        scs_ptr->input_resolution,
+        scs_ptr->static_config.fast_decode)) {
         EbPictureBufferDescInitData init_data;
 
         init_data.buffer_enable_mask = PICTURE_BUFFER_DESC_FULL_MASK;
@@ -329,8 +332,7 @@ void set_unscaled_input_16bit(PictureControlSet *pcs_ptr) {
 
 void derive_blk_pointers_enc(EbPictureBufferDesc *recon_picture_buf, int32_t plane,
                              int32_t blk_col_px, int32_t blk_row_px, void **pp_blk_recon_buf,
-                             int32_t *recon_stride, int32_t sub_x, int32_t sub_y,
-                             Bool use_highbd) {
+                             int32_t *recon_stride, int32_t sub_x, int32_t sub_y, Bool use_highbd) {
     int32_t block_offset;
 
     if (plane == 0) {
@@ -548,13 +550,9 @@ void *rest_kernel(void *input_ptr) {
 
         cdef_results_ptr      = (CdefResults *)cdef_results_wrapper_ptr->object_ptr;
         pcs_ptr               = (PictureControlSet *)cdef_results_ptr->pcs_wrapper_ptr->object_ptr;
-#if FIX_REMOVE_SCS_WRAPPER
-        scs_ptr = pcs_ptr->scs_ptr;
-#else
-        scs_ptr               = (SequenceControlSet *)pcs_ptr->scs_wrapper_ptr->object_ptr;
-#endif
+        scs_ptr               = pcs_ptr->scs_ptr;
         FrameHeader *frm_hdr  = &pcs_ptr->parent_pcs_ptr->frm_hdr;
-        Bool       is_16bit = scs_ptr->is_16bit_pipeline;
+        Bool         is_16bit = scs_ptr->is_16bit_pipeline;
         Av1Common   *cm       = pcs_ptr->parent_pcs_ptr->av1_cm;
 
         if (scs_ptr->seq_header.enable_restoration && frm_hdr->allow_intrabc == 0) {
@@ -737,13 +735,9 @@ void *rest_kernel(void *input_ptr) {
                                                     picture_demux_results_wrapper_ptr->object_ptr;
                     picture_demux_results_rtr->reference_picture_wrapper_ptr =
                         pcs_ptr->parent_pcs_ptr->reference_picture_wrapper_ptr;
-#if FIX_REMOVE_SCS_WRAPPER
-                    picture_demux_results_rtr->scs_ptr = pcs_ptr->scs_ptr;
-#else
-                    picture_demux_results_rtr->scs_wrapper_ptr = pcs_ptr->scs_wrapper_ptr;
-#endif
-                    picture_demux_results_rtr->picture_number  = pcs_ptr->picture_number;
-                    picture_demux_results_rtr->picture_type    = EB_PIC_REFERENCE;
+                    picture_demux_results_rtr->scs_ptr        = pcs_ptr->scs_ptr;
+                    picture_demux_results_rtr->picture_number = pcs_ptr->picture_number;
+                    picture_demux_results_rtr->picture_type   = EB_PIC_REFERENCE;
 
                     // Post Reference Picture
                     svt_post_full_object(picture_demux_results_wrapper_ptr);

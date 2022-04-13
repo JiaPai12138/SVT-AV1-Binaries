@@ -448,15 +448,11 @@ void *packetization_kernel(void *input_ptr) {
             (EntropyCodingResults *)entropy_coding_results_wrapper_ptr->object_ptr;
         PictureControlSet *pcs_ptr = (PictureControlSet *)
                                          entropy_coding_results_ptr->pcs_wrapper_ptr->object_ptr;
-#if FIX_REMOVE_SCS_WRAPPER
-        SequenceControlSet *scs_ptr = pcs_ptr->scs_ptr;
-#else
-        SequenceControlSet *scs_ptr = (SequenceControlSet *)pcs_ptr->scs_wrapper_ptr->object_ptr;
-#endif
-        EncodeContext      *encode_context_ptr = scs_ptr->encode_context_ptr;
-        FrameHeader        *frm_hdr            = &pcs_ptr->parent_pcs_ptr->frm_hdr;
-        Av1Common *const    cm                 = pcs_ptr->parent_pcs_ptr->av1_cm;
-        uint16_t            tile_cnt = cm->tiles_info.tile_rows * cm->tiles_info.tile_cols;
+        SequenceControlSet      *scs_ptr            = pcs_ptr->scs_ptr;
+        EncodeContext           *encode_context_ptr = scs_ptr->encode_context_ptr;
+        FrameHeader             *frm_hdr            = &pcs_ptr->parent_pcs_ptr->frm_hdr;
+        Av1Common *const         cm                 = pcs_ptr->parent_pcs_ptr->av1_cm;
+        uint16_t                 tile_cnt = cm->tiles_info.tile_rows * cm->tiles_info.tile_cols;
         PictureParentControlSet *parent_pcs_ptr = (PictureParentControlSet *)
                                                       pcs_ptr->parent_pcs_ptr;
 
@@ -598,16 +594,7 @@ void *packetization_kernel(void *input_ptr) {
             }
 
             // Delayed call from Rate Control process for multiple coding loop frames
-#if FRFCTR_RC_P9
             if (scs_ptr->static_config.rate_control_mode)
-#else
-            if (scs_ptr->static_config.pass == ENC_MIDDLE_PASS ||
-                scs_ptr->static_config.pass == ENC_LAST_PASS || scs_ptr->lap_rc ||
-                (!(scs_ptr->static_config.pass == ENC_MIDDLE_PASS ||
-                   scs_ptr->static_config.pass == ENC_LAST_PASS) &&
-                 scs_ptr->static_config.pass != ENC_FIRST_PASS &&
-                 scs_ptr->static_config.rate_control_mode == 2))
-#endif
                 update_rc_counts(parent_pcs_ptr);
 
             // Release pa me ptr. For non-superres-recode, it's released in mode_decision_kernel
@@ -643,13 +630,9 @@ void *packetization_kernel(void *input_ptr) {
                                                     picture_demux_results_wrapper_ptr->object_ptr;
                     picture_demux_results_rtr->reference_picture_wrapper_ptr =
                         parent_pcs_ptr->reference_picture_wrapper_ptr;
-#if FIX_REMOVE_SCS_WRAPPER
-                    picture_demux_results_rtr->scs_ptr = parent_pcs_ptr->scs_ptr;
-#else
-                    picture_demux_results_rtr->scs_wrapper_ptr = parent_pcs_ptr->scs_wrapper_ptr;
-#endif
-                    picture_demux_results_rtr->picture_number  = parent_pcs_ptr->picture_number;
-                    picture_demux_results_rtr->picture_type    = EB_PIC_REFERENCE;
+                    picture_demux_results_rtr->scs_ptr        = parent_pcs_ptr->scs_ptr;
+                    picture_demux_results_rtr->picture_number = parent_pcs_ptr->picture_number;
+                    picture_demux_results_rtr->picture_type   = EB_PIC_REFERENCE;
 
                     // Post Reference Picture
                     svt_post_full_object(picture_demux_results_wrapper_ptr);
@@ -771,14 +754,10 @@ void *packetization_kernel(void *input_ptr) {
 
             PictureDemuxResults *picture_manager_results_ptr =
                 (PictureDemuxResults *)picture_manager_results_wrapper_ptr->object_ptr;
-            picture_manager_results_ptr->picture_number  = pcs_ptr->picture_number;
-            picture_manager_results_ptr->picture_type    = EB_PIC_FEEDBACK;
-            picture_manager_results_ptr->decode_order    = pcs_ptr->parent_pcs_ptr->decode_order;
-#if FIX_REMOVE_SCS_WRAPPER
-            picture_manager_results_ptr->scs_ptr = pcs_ptr->scs_ptr;
-#else
-            picture_manager_results_ptr->scs_wrapper_ptr = pcs_ptr->scs_wrapper_ptr;
-#endif
+            picture_manager_results_ptr->picture_number = pcs_ptr->picture_number;
+            picture_manager_results_ptr->picture_type   = EB_PIC_FEEDBACK;
+            picture_manager_results_ptr->decode_order   = pcs_ptr->parent_pcs_ptr->decode_order;
+            picture_manager_results_ptr->scs_ptr        = pcs_ptr->scs_ptr;
         }
         // Reset the Bitstream before writing to it
         bitstream_reset(pcs_ptr->bitstream_ptr);
@@ -924,11 +903,6 @@ void *packetization_kernel(void *input_ptr) {
              pcs_ptr->parent_pcs_ptr->reference_picture_wrapper_ptr))
             // Post the Full Results Object
             svt_post_full_object(picture_manager_results_wrapper_ptr);
-#if !FIX_REMOVE_SCS_WRAPPER
-        else
-            // Since feedback is not set to PM, life count of is reduced here instead of PM
-            svt_release_object(pcs_ptr->scs_wrapper_ptr);
-#endif
         svt_release_object(pcs_ptr->parent_pcs_ptr->enc_dec_ptr->enc_dec_wrapper_ptr); //Child
         //Release the Parent PCS then the Child PCS
         assert(entropy_coding_results_ptr->pcs_wrapper_ptr->live_count == 1);
@@ -948,7 +922,7 @@ void *packetization_kernel(void *input_ptr) {
             queue_entry_ptr           = get_reorder_queue_entry(encode_context_ptr, frames - 1);
             output_stream_wrapper_ptr = queue_entry_ptr->output_stream_wrapper_ptr;
             output_stream_ptr         = (EbBufferHeaderType *)output_stream_wrapper_ptr->object_ptr;
-            Bool eos                = output_stream_ptr->flags & EB_BUFFERFLAG_EOS;
+            Bool eos                  = output_stream_ptr->flags & EB_BUFFERFLAG_EOS;
 
             encode_tu(encode_context_ptr, frames, total_bytes, output_stream_ptr);
 

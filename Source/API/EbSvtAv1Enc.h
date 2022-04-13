@@ -25,7 +25,6 @@ extern "C" {
 
 #define MAX_HIERARCHICAL_LEVEL 6
 #define REF_LIST_MAX_DEPTH 4
-#if CLN_DEFINITIONS
 /*!\brief Decorator indicating that given struct/union/enum is packed */
 #ifndef ATTRIBUTE_PACKED
 #if defined(__GNUC__) && __GNUC__
@@ -34,31 +33,26 @@ extern "C" {
 #define ATTRIBUTE_PACKED
 #endif
 #endif /* ATTRIBUTE_PACKED */
-    typedef enum ATTRIBUTE_PACKED {
-        ENC_MRS = -2, // Highest quality research mode (slowest)
-        ENC_MR = -1, //Research mode with higher quality than M0
-        ENC_M0 = 0,
-        ENC_M1 = 1,
-        ENC_M2 = 2,
-        ENC_M3 = 3,
-        ENC_M4 = 4,
-        ENC_M5 = 5,
-        ENC_M6 = 6,
-        ENC_M7 = 7,
-        ENC_M8 = 8,
-        ENC_M9 = 9,
-        ENC_M10 = 10,
-        ENC_M11 = 11,
-        ENC_M12 = 12,
-        ENC_M13 = 13,
-        MAX_ENC_PRESET = ENC_M13
-    } EncMode;
-#else
-#define MAX_ENC_PRESET 13
-#endif
-#define NUM_MV_COMPONENTS 2
-#define NUM_MV_HIST 2
-#define MAX_MV_HIST_SIZE 2 * REF_LIST_MAX_DEPTH *NUM_MV_COMPONENTS *NUM_MV_HIST
+typedef enum ATTRIBUTE_PACKED {
+    ENC_MRS        = -2, // Highest quality research mode (slowest)
+    ENC_MR         = -1, //Research mode with higher quality than M0
+    ENC_M0         = 0,
+    ENC_M1         = 1,
+    ENC_M2         = 2,
+    ENC_M3         = 3,
+    ENC_M4         = 4,
+    ENC_M5         = 5,
+    ENC_M6         = 6,
+    ENC_M7         = 7,
+    ENC_M8         = 8,
+    ENC_M9         = 9,
+    ENC_M10        = 10,
+    ENC_M11        = 11,
+    ENC_M12        = 12,
+    ENC_M13        = 13,
+    MAX_ENC_PRESET = ENC_M13
+} EncMode;
+
 #define DEFAULT -1
 
 #define EB_BUFFERFLAG_EOS 0x00000001 // signals the last packet of the stream
@@ -155,6 +149,15 @@ typedef struct SvtAv1FixedBuf {
     uint64_t sz; /**< Length of the buffer, in chars */
 } SvtAv1FixedBuf; /**< alias for struct aom_fixed_buf */
 
+/** Indicates how an S-Frame should be inserted.
+*/
+typedef enum EbSFrameMode {
+    SFRAME_STRICT_BASE =
+        1, /**< The considered frame will be made into an S-Frame only if it is a base layer inter frame */
+    SFRAME_NEAREST_BASE =
+        2, /**< If the considered frame is not an altref frame, the next base layer inter frame will be made into an S-Frame */
+} EbSFrameMode;
+
 // Will contain the EbEncApi which will live in the EncHandle class
 // Only modifiable during config-time.
 typedef struct EbSvtAv1EncConfiguration {
@@ -235,15 +238,13 @@ typedef struct EbSvtAv1EncConfiguration {
      */
     uint32_t source_height;
 
-    /* The frequecy of images being displayed. If the number is less than 1000,
-     * the input frame rate is an integer number between 1 and 60, else the input
-     * number is in Q16 format, shifted by 16 bits, where max allowed is 240 fps.
-     * If FrameRateNumerator and FrameRateDenominator are both not equal to zero,
-     * the encoder will ignore this parameter.
-     *
-     * Default is 25. */
-    uint32_t frame_rate;
-
+    /* Specifies the maximum frame width/height for the frames represented by the sequence header
+     * (max_frame_width_minus_1 and max_frame_height_minus_1, spec 5.5.1).
+     * Actual frame height could be equal to or less than this value. E.g. Use this value to indicate
+     * the maximum height between renditions when switch frame feature is on.
+     */
+    uint32_t forced_max_frame_width;
+    uint32_t forced_max_frame_height;
     /* Frame rate numerator. When zero, the encoder will use -fps if
      * FrameRateDenominator is also zero, otherwise an error is returned.
      *
@@ -296,7 +297,7 @@ typedef struct EbSvtAv1EncConfiguration {
     /* use fixed qp offset for every picture based on temporal layer index
     *
     * Default is 0.*/
-    Bool  use_fixed_qindex_offsets;
+    Bool    use_fixed_qindex_offsets;
     int32_t qindex_offsets[EB_MAX_TEMPORAL_LAYERS];
     int32_t key_frame_chroma_qindex_offset;
     int32_t key_frame_qindex_offset;
@@ -327,6 +328,15 @@ typedef struct EbSvtAv1EncConfiguration {
     * Default is 0. */
     uint32_t film_grain_denoise_strength;
 
+    /**
+    * @brief Determines how much denoising is used.
+    * Only applicable when film grain is ON.
+    *
+    * 0 is no denoising
+    * 1 is full denoising
+    */
+    uint8_t film_grain_denoise_apply;
+
     /* CDEF Level
     *
     * Default is -1. */
@@ -345,21 +355,12 @@ typedef struct EbSvtAv1EncConfiguration {
     int enable_mfmv;
 
     // Rate Control
-#if FTR_CBR
     /* Rate control mode.
      *
      * 0 = Constant QP.
      * 1 = Variable Bit Rate, achieve the target bitrate at entire stream.
      * 2 = Constant Bit Rate, achieve the target bitrate
      * Default is 0. */
-#else
-    /* Rate control mode.
-     *
-     * 0 = Constant QP.
-     * 1 = Variable Bit Rate, achieve the target bitrate at entire stream.
-     * 2 = Constrained Variable Bit Rate, achieve the target bitrate at each gop
-     * Default is 0. */
-#endif
     uint32_t rate_control_mode;
     /* Flag to enable the scene change detection algorithm.
      *
@@ -455,6 +456,7 @@ typedef struct EbSvtAv1EncConfiguration {
 
     /* Enable adaptive quantization within a frame using segmentation.
      *
+     * For rate control mode 0, setting this to 0 will use CQP mode, else CRF mode will be used.
      * Default is 2. */
     uint8_t enable_adaptive_quantization;
 
@@ -562,7 +564,7 @@ typedef struct EbSvtAv1EncConfiguration {
      */
     Bool recon_enabled;
 
-    /* Log 2 Tile Rows and colums . 0 means no tiling,1 means that we split the dimension
+    /* Log 2 Tile Rows and columns . 0 means no tiling,1 means that we split the dimension
         * into 2
         * Default is 0. */
     int32_t tile_columns;
@@ -626,21 +628,21 @@ typedef struct EbSvtAv1EncConfiguration {
     /* Color primaries
     * values are from EbColorPrimaries
     Default is 2 (CP_UNSPECIFIED). */
-    uint8_t color_primaries;
+    EbColorPrimaries color_primaries;
     /* Transfer characteristics
     * values are from EbTransferCharacteristics
     Default is 2 (TC_UNSPECIFIED). */
-    uint8_t transfer_characteristics;
+    EbTransferCharacteristics transfer_characteristics;
     /* Matrix coefficients
     * values are from EbMatrixCoefficients
     Default is 2 (MC_UNSPECIFIED). */
-    uint8_t matrix_coefficients;
+    EbMatrixCoefficients matrix_coefficients;
     /* Color range
     * values are from EbColorRange
     * 0: studio swing.
     * 1: full swing.
     Default is 0. */
-    uint8_t color_range;
+    EbColorRange color_range;
     /* Mastering display metadata
     * values are from set using svt_aom_parse_mastering_display()
     */
@@ -649,23 +651,32 @@ typedef struct EbSvtAv1EncConfiguration {
     * values are from set using svt_aom_parse_content_light_level()
     */
     struct EbContentLightLevel content_light_level;
-#if TUNE_FAST_DECODE
+
     /* Decoder-speed-targeted encoder optimization level (produce bitstreams that can be decoded faster).
     * 0: No decoder speed optimization
-    * 1: Low-level decoder speed optimization (fast decode)
-    * 2: Medium-level decoder speed optimization (faster decode)
-    * 3: High-level decoder speed optimization (veryfast decode)
-    * 4: Very-High-level decoder speed optimization (fastest decode)
+    * 1: Decoder speed optimization enabled (fast decode)
     */
-#else
-    /* Decoder speed optimization level
-    * 0: No decoder speed optimization
-    * 1: Low-level decoder speed optimization (fast decode)
-    * 2: Medium-level decoder speed optimization (faster decode)
-    * 3: High-level decoder speed optimization (fastest decode)
+    Bool fast_decode;
+
+    /* S-Frame interval (frames)
+    * 0: S-Frame off
+    * >0: S-Frame on and indicates the number of frames after which a frame may be coded as an S-Frame
     */
-#endif
-    uint8_t fast_decode;
+    int32_t sframe_dist;
+    /* Indicates how an S-Frame should be inserted
+    * values are from EbSFrameMode
+    * SFRAME_STRICT_ARF: the considered frame will be made into an S-Frame only if it is an altref frame
+    * SFRAME_NEAREST_ARF: if the considered frame is not an altref frame, the next altref frame will be made into an S-Frame
+    */
+    EbSFrameMode sframe_mode;
+
+    /* Chroma sample position
+     * Values as per 6.4.2 of the specification:
+     * EB_CSP_UNKNOWN:   default
+     * EB_CSP_VERTICAL:  value 0 from H.273 AKA "left"
+     * EB_CSP_COLOCATED: value 2 from H.273 AKA "top left"
+     */
+    EbChromaSamplePosition chroma_sample_position;
 } EbSvtAv1EncConfiguration;
 
 /**

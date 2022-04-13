@@ -61,10 +61,101 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
         SVT_ERROR("Instance %u: Source Height must be at least 64\n", channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
-    if (config->pred_structure > 2) {
-        SVT_ERROR("Instance %u: Pred Structure must be [0, 1 or 2]\n", channel_number + 1);
+    if (scs_ptr->max_input_luma_width % 2) {
+        SVT_ERROR("Error Instance %u: Source Width must be even for YUV_420 colorspace\n",
+                  channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
+    if (scs_ptr->max_input_luma_height % 2) {
+        SVT_ERROR("Error Instance %u: Source Height must be even for YUV_420 colorspace\n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->pred_structure > 2 || config->pred_structure < 1) {
+        SVT_ERROR("Instance %u: Pred Structure must be [1 or 2]\n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->pred_structure == 1 && config->pass > 0) {
+        SVT_ERROR("Instance %u: Multi-passes is not support with Low Delay mode \n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->vbr_bias_pct > 100) {
+        SVT_ERROR("Instance %u: The bias percentage must be [0, 100]  \n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->maximum_buffer_size_ms < 20 || config->maximum_buffer_size_ms > 10000) {
+        SVT_ERROR("Instance %u: The maximum buffer size must be between [20, 10000]\n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->starting_buffer_level_ms < 20 || config->starting_buffer_level_ms > 10000) {
+        SVT_ERROR("Instance %u: The initial buffer size must be between [20, 10000] \n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    } else if (config->starting_buffer_level_ms >= config->maximum_buffer_size_ms) {
+        SVT_WARN(
+            "The initial buffer size must be less than maximum buffer size. Defaulting optimal "
+            "buffer size to maximum buffer size - 1 (%u)\n",
+            config->maximum_buffer_size_ms - 1);
+        config->starting_buffer_level_ms = (config->maximum_buffer_size_ms - 1);
+    }
+
+    if (config->optimal_buffer_level_ms < 20 || config->optimal_buffer_level_ms > 10000) {
+        SVT_ERROR("Instance %u: The optimal buffer size must be between [20, 10000]\n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    } else if (config->optimal_buffer_level_ms >= config->maximum_buffer_size_ms) {
+        SVT_WARN(
+            "The optimal buffer size must be less than maximum buffer size. Defaulting optimal "
+            "buffer size to maximum buffer size - 1 (%u)\n",
+            config->maximum_buffer_size_ms - 1);
+        config->optimal_buffer_level_ms = (config->maximum_buffer_size_ms - 1);
+    }
+
+    if (config->over_shoot_pct > 100) {
+        SVT_ERROR("Instance %u: The overshoot percentage must be between [0, 100] \n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->under_shoot_pct > 100) {
+        SVT_ERROR("Instance %u: The undershoot percentage must be between [0, 100] \n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->target_bit_rate > 100000000) {
+        SVT_ERROR("Instance %u: The target bit rate must be between [0, 100000] kbps \n",
+            channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->max_bit_rate > 100000000) {
+        SVT_ERROR("Instance %u: The maximum bit rate must be between [0, 100000] kbps \n",
+            channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->vbr_max_section_pct > 100) {
+        SVT_ERROR("Instance %u: The max section percentage must be between [0, 100] \n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->vbr_min_section_pct > 100) {
+        SVT_ERROR("Instance %u: The min section percentage must be between [0, 100] \n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->rate_control_mode != 0 && (config->target_bit_rate >= config->max_bit_rate)
+         && (config->max_bit_rate != 0)) {
+        SVT_ERROR("Instance %u: Max Bitrate must be greater than Target Bitrate\n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
     if (scs_ptr->max_input_luma_width % 8 &&
         scs_ptr->static_config.compressed_ten_bit_format == 1) {
         SVT_ERROR(
@@ -85,6 +176,34 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
         return_error = EB_ErrorBadParameter;
     }
 
+    if (scs_ptr->seq_header.max_frame_width < 64) {
+        SVT_ERROR("Instance %u: Forced Max Width must be at least 64\n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (scs_ptr->seq_header.max_frame_height < 64) {
+        SVT_ERROR("Instance %u: Forced Max Height must be at least 64\n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (scs_ptr->seq_header.max_frame_width > 16384) {
+        SVT_ERROR("Instance %u: Forced Max Width must be less than or equal to 16384\n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (scs_ptr->seq_header.max_frame_height > 8704) {
+        SVT_ERROR("Instance %u: Forced Max Height must be less than or equal to 8704)\n",
+                  channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if ((scs_ptr->max_input_luma_width > scs_ptr->seq_header.max_frame_width) ||
+        (scs_ptr->max_input_luma_height > scs_ptr->seq_header.max_frame_height)) {
+        SVT_ERROR(
+            "Error instance %u: Source Width/Height must be less than or equal to Forced Max "
+            "Width/Height\n",
+            channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
     if (config->level != 0 && (config->level < 20 || config->level > 73)) {
         SVT_ERROR("Instance %u: Level must be in the range of [2.0-7.3]\n", channel_number + 1);
         return_error = EB_ErrorBadParameter;
@@ -93,7 +212,7 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
     if (config->qp > MAX_QP_VALUE) {
         SVT_ERROR("Instance %u: %s must be [0 - %d]\n",
                   channel_number + 1,
-                  config->enable_tpl_la ? "CRF" : "QP",
+                  config->enable_adaptive_quantization ? "CRF" : "QP",
                   MAX_QP_VALUE);
         return_error = EB_ErrorBadParameter;
     }
@@ -106,11 +225,7 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
         SVT_ERROR("Instance %u: The intra period must be [-2, 2^31-2]  \n", channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
-#if FTR_CBR
     if ((config->intra_period_length < 0) && config->rate_control_mode == 1) {
-#else
-    if ((config->intra_period_length < 0) && config->rate_control_mode >= 1) {
-#endif
         SVT_ERROR("Instance %u: The intra period must be > 0 for RateControlMode %d \n",
                   channel_number + 1,
                   config->rate_control_mode);
@@ -140,14 +255,19 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
     }
 
     // Check if the current input video is conformant with the Level constraint
-    if (config->frame_rate > (240 << 16)) {
+    if (scs_ptr->frame_rate > (240 << 16)) {
         SVT_ERROR("Instance %u: The maximum allowed frame rate is 240 fps\n", channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
     // Check that the frame_rate is non-zero
-    if (!config->frame_rate) {
+    if (!scs_ptr->frame_rate) {
         SVT_ERROR("Instance %u: The frame rate should be greater than 0 fps \n",
-                  channel_number + 1);
+            channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (scs_ptr->static_config.frame_rate_numerator == 0 || scs_ptr->static_config.frame_rate_denominator == 0) {
+        SVT_ERROR("Instance %u: The frame_rate_numerator and frame_rate_denominator must be greater than 0\n",
+            channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
 
@@ -337,25 +457,16 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
             config->enable_mfmv);
         return_error = EB_ErrorBadParameter;
     }
-#if TUNE_FAST_DECODE
-    if (config->fast_decode > 4) {
+
+    if (config->fast_decode > 1) {
         SVT_ERROR(
-            "Instance %u: Invalid fast decode flag [0 - 4, 0 for no decoder optimization], your "
+            "Instance %u: Invalid fast decode flag [0 - 1, 0 for no decoder optimization], your "
             "input: %d\n",
             channel_number + 1,
             config->fast_decode);
         return_error = EB_ErrorBadParameter;
     }
-#else
-    if (config->fast_decode > 3) {
-        SVT_ERROR(
-            "Instance %u: Invalid fast decode flag [0 - 3, 0 for no decoder optimization], your "
-            "input: %d\n",
-            channel_number + 1,
-            config->fast_decode);
-        return_error = EB_ErrorBadParameter;
-    }
-#endif
+
     if (config->tune > 1) {
         SVT_ERROR(
             "Instance %u: Invalid tune flag [0 - 1, 0 for VQ and 1 for PSNR], your input: %d\n",
@@ -392,7 +503,7 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
                         config->pred_struct[i].temporal_layer_index);
                     return_error = EB_ErrorBadParameter;
                 }
-                Bool  have_ref_frame_within_minigop_in_list0 = FALSE;
+                Bool    have_ref_frame_within_minigop_in_list0 = FALSE;
                 int32_t entry_idx                              = i + 1;
                 for (int32_t j = 0; j < REF_LIST_MAX_DEPTH; j++) {
                     if ((entry_idx - config->pred_struct[i].ref_list1[j] >
@@ -497,11 +608,7 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
                   channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
-#if FTR_CBR
     if (config->rate_control_mode == 1 && config->intra_period_length == -1) {
-#else
-    if (config->rate_control_mode != 0 && config->intra_period_length == -1) {
-#endif
         SVT_ERROR(
             "Instance %u: keyint = -1 is not supported for modes other than CRF rate control "
             "encoding modes.\n",
@@ -553,13 +660,47 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
         return_error = EB_ErrorBadParameter;
     }
 
-#if FIX_AQ_MODE
     if (config->enable_adaptive_quantization == 0 && config->rate_control_mode) {
-        SVT_ERROR("Instance %u: Adaptive quantization can not be turned OFF when RC ON\n", channel_number + 1);
+        SVT_ERROR("Instance %u: Adaptive quantization can not be turned OFF when RC ON\n",
+                  channel_number + 1);
         return_error = EB_ErrorBadParameter;
     }
-#endif
+
+    if (config->sframe_dist < 0) {
+        SVT_ERROR("Error instance %u: switch frame interval must be >= 0\n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->sframe_dist > 0 && config->pred_structure != PRED_LOW_DELAY_P &&
+        config->pred_structure != PRED_LOW_DELAY_B) {
+        SVT_ERROR(
+            "Error instance %u: switch frame feature only supports low delay prediction "
+            "structure\n",
+            channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->sframe_dist > 0 && config->hierarchical_levels == 0) {
+        SVT_ERROR("Error instance %u: switch frame feature does not support flat IPPP\n",
+            channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+    if (config->sframe_dist > 0 && config->sframe_mode != SFRAME_STRICT_BASE &&
+        config->sframe_mode != SFRAME_NEAREST_BASE) {
+        SVT_ERROR(
+            "Error instance %u: invalid switch frame mode %d, should be in the range [%d - %d]\n",
+            channel_number + 1,
+            config->sframe_mode,
+            SFRAME_STRICT_BASE,
+            SFRAME_NEAREST_BASE);
+        return_error = EB_ErrorBadParameter;
+    }
+
     /* Warnings about the use of features that are incomplete */
+    if (config->enable_adaptive_quantization == 1) {
+        config->enable_adaptive_quantization = 2;
+        SVT_WARN(
+            "Instance %u: Adaptive quantization mode 1 has been disabled, mode 2 will be forced!\n",
+            channel_number + 1);
+    }
 
     // color description
     if (config->color_primaries == 0 || config->color_primaries == 3 ||
@@ -588,20 +729,36 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
             config->matrix_coefficients);
     }
 
-    if (config->rate_control_mode == 1 || config->rate_control_mode == 2) {
-        SVT_WARN(
-            "Instance %u: The VBR and CBR rate control modes are a work-in-progress projects, and "
-            "are only available for demos, experimentation, and further development uses and "
-            "should not be used for benchmarking until fully implemented.\n",
-            channel_number + 1);
+    if (config->chroma_sample_position < EB_CSP_UNKNOWN ||
+        config->chroma_sample_position > EB_CSP_COLOCATED) {
+        if (config->chroma_sample_position != EB_CSP_RESERVED) {
+            SVT_ERROR("Instance %u: chroma sample position %d is unknown.\n",
+                      channel_number + 1, config->chroma_sample_position);
+            return_error = EB_ErrorBadParameter;
+        } else {
+            SVT_WARN("Instance %u: value %d for chroma_sample_position is reserved "
+                     "and not recommended for usage.\n",
+                     channel_number + 1,
+                     config->chroma_sample_position);
+        }
     }
 
-    if (config->film_grain_denoise_strength > 0 && config->enc_mode > 3) {
+    if (config->film_grain_denoise_strength > 0 && config->enc_mode > 6) {
         SVT_WARN(
-            "Instance %u: It is recommended to not use Film Grain for presets greater than 3 as it "
+            "Instance %u: It is recommended to not use Film Grain for presets greater than 6 as it "
             "produces a significant compute overhead. This combination should only be used for "
             "debug purposes.\n",
             channel_number + 1);
+    }
+
+    if (config->film_grain_denoise_strength > 50) {
+        SVT_ERROR("Instance %u: Film grain denoise strength is only supported for values between [0,50]\n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
+    }
+
+    if (config->film_grain_denoise_apply != 0 && config->film_grain_denoise_apply != 1) {
+        SVT_ERROR("Instance %u: The film grain denoise apply signal can only have a value of 0 or 1\n", channel_number + 1);
+        return_error = EB_ErrorBadParameter;
     }
 
     // Limit 8K & 16K support
@@ -638,12 +795,23 @@ EbErrorType svt_av1_verify_settings(SequenceControlSet *scs_ptr) {
             return_error = EB_ErrorBadParameter;
         }
     }
-#if FIX_SCD
     if (scs_ptr->static_config.scene_change_detection) {
         scs_ptr->static_config.scene_change_detection = 0;
-        SVT_WARN("SVT-AV1 has an integrated mode decision mechanism to handle scene changes and will not insert a key frame at scene changes\n");
+        SVT_WARN(
+            "SVT-AV1 has an integrated mode decision mechanism to handle scene changes and will "
+            "not insert a key frame at scene changes\n");
     }
-#endif
+    if ((config->tile_columns > 0 || config->tile_rows > 0)) {
+        SVT_WARN(
+            "The use of tiles does not help the SVT-AV1 encoder increase parallelism as it already "
+            "employs subpicture parallelism methods for multi-threaded encoding, while maintaining "
+            "no additional loss in video quality. On the other hand, the use of Tiles will "
+            "necessarily cause some additional loss in video quality. If you are using tiles with "
+            "the intent of increasing the decoder speed, please consider using --fast-decode 1. "
+            "Should you still require the use of tiles, it is strongly recommended that you use no "
+            "more than 2 tiles e.g. --tiles-columns 1.\n");
+    }
+
     return return_error;
 }
 
@@ -657,22 +825,18 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration *config_ptr) {
         SVT_ERROR("The EbSvtAv1EncConfiguration structure is empty!\n");
         return EB_ErrorBadParameter;
     }
-
-    config_ptr->frame_rate                = 60 << 16;
     config_ptr->frame_rate_numerator      = 60000;
     config_ptr->frame_rate_denominator    = 1000;
     config_ptr->encoder_bit_depth         = 8;
     config_ptr->compressed_ten_bit_format = 0;
     config_ptr->source_width              = 0;
     config_ptr->source_height             = 0;
+    config_ptr->forced_max_frame_width    = 0;
+    config_ptr->forced_max_frame_height   = 0;
     config_ptr->stat_report               = 0;
     config_ptr->tile_rows                 = 0;
     config_ptr->tile_columns              = 0;
-#if FIX_1PVBR
     config_ptr->qp = DEFAULT_QP;
-#else
-    config_ptr->qp = 50;
-#endif
     config_ptr->use_qp_file = FALSE;
 
     config_ptr->use_fixed_qindex_offsets = FALSE;
@@ -680,7 +844,7 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration *config_ptr) {
     config_ptr->key_frame_chroma_qindex_offset = 0;
     config_ptr->key_frame_qindex_offset        = 0;
     memset(config_ptr->chroma_qindex_offsets, 0, sizeof(config_ptr->chroma_qindex_offsets));
-    config_ptr->luma_y_dc_qindex_offset = 0;
+    config_ptr->luma_y_dc_qindex_offset   = 0;
     config_ptr->chroma_u_dc_qindex_offset = 0;
     config_ptr->chroma_u_ac_qindex_offset = 0;
     config_ptr->chroma_v_dc_qindex_offset = 0;
@@ -696,10 +860,10 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration *config_ptr) {
     config_ptr->min_qp_allowed         = 1;
 
     config_ptr->enable_adaptive_quantization = 2;
-    config_ptr->enc_mode                     = 12;
+    config_ptr->enc_mode                     = 10;
     config_ptr->intra_period_length          = -2;
     config_ptr->intra_refresh_type           = 2;
-    config_ptr->hierarchical_levels          = 4;
+    config_ptr->hierarchical_levels          = 0;
     config_ptr->pred_structure               = PRED_RANDOM_ACCESS;
     config_ptr->enable_dlf_flag              = TRUE;
     config_ptr->cdef_level                   = DEFAULT;
@@ -713,17 +877,14 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration *config_ptr) {
     // Two pass data rate control options
     config_ptr->vbr_bias_pct             = 50;
     config_ptr->vbr_min_section_pct      = 0;
-    config_ptr->vbr_max_section_pct      = 2000;
+    config_ptr->vbr_max_section_pct      = 100;
     config_ptr->under_shoot_pct          = 25;
     config_ptr->over_shoot_pct           = 25;
     config_ptr->mbr_over_shoot_pct       = 50;
-    config_ptr->maximum_buffer_size_ms   = 6000;
-    config_ptr->starting_buffer_level_ms = 4000;
-    config_ptr->optimal_buffer_level_ms  = 5000;
+    config_ptr->maximum_buffer_size_ms   = 1000; // default settings for CBR
+    config_ptr->starting_buffer_level_ms = 600; // default settings for CBR
+    config_ptr->optimal_buffer_level_ms  = 600; // default settings for CBR
     config_ptr->recode_loop              = ALLOW_RECODE_DEFAULT;
-    // Bitstream options
-    //config_ptr->codeVpsSpsPps = 0;
-    //config_ptr->codeEosNal = 0;
     config_ptr->restricted_motion_vector = FALSE;
 
     config_ptr->high_dynamic_range_input = 0;
@@ -736,6 +897,7 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration *config_ptr) {
 
     // Latency
     config_ptr->film_grain_denoise_strength = 0;
+    config_ptr->film_grain_denoise_apply = 1;
 
     // CPU Flags
     config_ptr->use_cpu_flags = CPU_FLAGS_ALL;
@@ -766,10 +928,15 @@ EbErrorType svt_av1_set_default_params(EbSvtAv1EncConfiguration *config_ptr) {
     config_ptr->color_primaries                = 2;
     config_ptr->transfer_characteristics       = 2;
     config_ptr->matrix_coefficients            = 2;
-    config_ptr->color_range                    = 0;
+    config_ptr->color_range                    = EB_CR_STUDIO_RANGE;
+    config_ptr->chroma_sample_position         = EB_CSP_UNKNOWN;
     config_ptr->pass                           = 0;
     memset(&config_ptr->mastering_display, 0, sizeof(config_ptr->mastering_display));
     memset(&config_ptr->content_light_level, 0, sizeof(config_ptr->content_light_level));
+
+    // Switch frame default values
+    config_ptr->sframe_dist = 0;
+    config_ptr->sframe_mode = SFRAME_NEAREST_BASE;
     return return_error;
 }
 
@@ -795,96 +962,83 @@ void svt_av1_print_lib_params(SequenceControlSet *scs) {
     SVT_INFO("-------------------------------------------\n");
 
     if (config->pass == ENC_FIRST_PASS)
-        SVT_INFO("SVT [config]: Preset \t\t\t\t\t\t\t: Pass 1\n");
+        SVT_INFO("SVT [config]: preset \t\t\t\t\t\t\t: Pass 1\n");
     else if (config->pass == ENC_MIDDLE_PASS)
-        SVT_INFO("SVT [config]: Preset \t\t\t\t\t\t\t: Pass 2\n");
+        SVT_INFO("SVT [config]: preset \t\t\t\t\t\t\t: Pass 2\n");
     else {
-        SVT_INFO("SVT [config]: %s\tTier %s\tLevel %s\n",
-                 config->profile == MAIN_PROFILE               ? "Main Profile"
-                     : config->profile == HIGH_PROFILE         ? "High Profile"
-                     : config->profile == PROFESSIONAL_PROFILE ? "Professional Profile"
-                                                               : "Unknown Profile",
+        SVT_INFO("SVT [config]: %s\ttier %s\tlevel %s\n",
+                 config->profile == MAIN_PROFILE               ? "main profile"
+                     : config->profile == HIGH_PROFILE         ? "high profile"
+                     : config->profile == PROFESSIONAL_PROFILE ? "professional profile"
+                                                               : "Unknown profile",
                  tier_to_str(config->tier),
                  level_to_str(config->level));
-        SVT_INFO("SVT [config]: Preset \t\t\t\t\t\t\t: %d\n", config->enc_mode);
+        SVT_INFO("SVT [config]: width / height / fps numerator / fps denominator \t\t: %d / %d / %d / %d\n",
+            config->source_width,
+            config->source_height,
+            config->frame_rate_numerator,
+            config->frame_rate_denominator);
         SVT_INFO(
-            "SVT [config]: EncoderBitDepth / EncoderColorFormat / CompressedTenBitFormat\t: %d / "
-            "%d / %d\n",
+            "SVT [config]: bit-depth / color format / compressed 10-bit format\t\t: %d / "
+            "%s / %d\n",
             config->encoder_bit_depth,
-            config->encoder_color_format,
+            config->encoder_color_format == EB_YUV400 ? "YUV400"
+            : config->encoder_color_format == EB_YUV420 ? "YUV420"
+            : config->encoder_color_format == EB_YUV422 ? "YUV422"
+            : config->encoder_color_format == EB_YUV444 ? "YUV444"
+            : "Unknown color format",
             config->compressed_ten_bit_format);
-        SVT_INFO("SVT [config]: SourceWidth / SourceHeight\t\t\t\t\t: %d / %d\n",
-                 config->source_width,
-                 config->source_height);
-        if (config->frame_rate_denominator != 0 && config->frame_rate_numerator != 0)
-            SVT_INFO(
-                "SVT [config]: Fps_Numerator / Fps_Denominator / Gop Size / IntraRefreshType \t: "
-                "%d / %d / %d / %d\n",
-                config->frame_rate_numerator,
-                config->frame_rate_denominator,
-                config->intra_period_length + 1,
-                config->intra_refresh_type);
-        else
-            SVT_INFO("SVT [config]: FrameRate / Gop Size\t\t\t\t\t\t: %d / %d\n",
-                     config->frame_rate > 1000 ? config->frame_rate >> 16 : config->frame_rate,
-                     config->intra_period_length + 1);
-        SVT_INFO("SVT [config]: HierarchicalLevels  / PredStructure\t\t\t\t: %d / %d\n",
-                 config->hierarchical_levels,
-                 config->pred_structure);
+
+        SVT_INFO("SVT [config]: preset / tune / pred struct \t\t\t\t\t: %d / %s / %s\n",
+            config->enc_mode,
+            config->tune == 0 ? "VQ" : "PSNR",
+            config->pred_structure == 1 ? "low delay"
+             : config->pred_structure == 2 ? "random access"
+             : "Unknown pred structure");
+        SVT_INFO(
+            "SVT [config]: gop size / mini-gop size / key-frame type \t\t\t: "
+            "%d / %d / %s\n",
+            config->intra_period_length + 1,
+            (1 << config->hierarchical_levels),
+            config->intra_refresh_type == SVT_AV1_FWDKF_REFRESH ? "FWD key frame"
+            : config->intra_refresh_type == SVT_AV1_KF_REFRESH ? "key frame"
+            : "Unknown key frame type");
+
         switch (config->rate_control_mode) {
         case 0:
             if (config->max_bit_rate)
                 SVT_INFO(
-                    "SVT [config]: BRC Mode / %s / MaxBitrate (kbps)/ SceneChange\t\t: %s / %d / "
-                    "%d / %d\n",
-                    scs->tpl_level ? "Rate Factor" : "CQP Assignment",
-                    scs->tpl_level ? "Capped CRF" : "CQP",
+                    "SVT [config]: BRC mode / %s / max bitrate (kbps)\t\t\t: %s / %d / "
+                    "%d\n",
+                    scs->tpl_level ? "rate factor" : "CQP Assignment",
+                    scs->tpl_level ? "capped CRF" : "CQP",
                     scs->static_config.qp,
-                    (int)config->max_bit_rate / 1000,
-                    config->scene_change_detection);
-#if FIX_AQ_MODE
-            else if (scs->tpl_level)
-                SVT_INFO("SVT [config]: BRC Mode / %s / SceneChange\t\t\t\t: %s / %d / %d\n",
-                    "Rate Factor",
-                    "CRF",
-                    scs->static_config.qp,
-                    config->scene_change_detection);
+                    (int)config->max_bit_rate / 1000);
             else
-                SVT_INFO("SVT [config]: BRC Mode / %s / SceneChange\t\t\t: %s / %d / %d\n",
-                    "CQP Assignment",
-                    "CQP",
-                    scs->static_config.qp,
-                    config->scene_change_detection);
-#else
-            else
-                SVT_INFO("SVT [config]: BRC Mode / %s / SceneChange\t\t\t\t: %s / %d / %d\n",
-                         scs->tpl_level ? "Rate Factor" : "CQP Assignment",
-                         scs->tpl_level ? "CRF" : "CQP",
-                         scs->static_config.qp,
-                         config->scene_change_detection);
-#endif
+                SVT_INFO(
+                    "SVT [config]: BRC mode / %s \t\t\t\t\t: %s / %d \n",
+                    scs->tpl_level ? "rate factor" : "CQP Assignment",
+                    scs->tpl_level ? "CRF" : "CQP",
+                         scs->static_config.qp);
             break;
         case 1:
             SVT_INFO(
-                "SVT [config]: BRC Mode / TargetBitrate (kbps)/ SceneChange\t\t\t: VBR / %d / %d\n",
-                (int)config->target_bit_rate / 1000,
-                config->scene_change_detection);
+                "SVT [config]: BRC mode / target bitrate (kbps)\t\t\t\t: VBR / %d \n",
+                (int)config->target_bit_rate / 1000);
             break;
         case 2:
-#if FTR_CBR
             SVT_INFO(
-                "SVT [config]: BRC Mode / TargetBitrate (kbps)/ SceneChange\t\t\t: CBR "
-                "/ %d / %d\n",
-                (int)config->target_bit_rate / 1000,
-                config->scene_change_detection);
-#else
-            SVT_INFO(
-                "SVT [config]: BRC Mode / TargetBitrate (kbps)/ SceneChange\t\t\t: Constraint VBR "
-                "/ %d / %d\n",
-                (int)config->target_bit_rate / 1000,
-                config->scene_change_detection);
-#endif
+                "SVT [config]: BRC mode / target bitrate (kbps)\t\t\t\t: CBR "
+                "/ %d\n",
+                (int)config->target_bit_rate / 1000);
             break;
+        }
+
+        if (config->film_grain_denoise_strength != 0){
+            SVT_INFO("SVT [config]: film grain synth / denoising / level \t\t\t\t: %d / %d / %d\n",
+                1,
+                config->film_grain_denoise_apply,
+                config->film_grain_denoise_strength);
         }
     }
 #ifdef DEBUG_BUFFERS
@@ -947,6 +1101,7 @@ static EbErrorType parse_list(const char *nptr, int32_t *list, size_t n) {
     const char *ptr = nptr;
     char       *endptr;
     size_t      i = 0;
+    memset(list, 0, n);
     while (*ptr) {
         if (*ptr == '[' || *ptr == ']') {
             ptr++;
@@ -1032,9 +1187,9 @@ static EbErrorType str_to_crf(const char *nptr, EbSvtAv1EncConfiguration *config
     if (return_error == EB_ErrorBadParameter)
         return return_error;
 
-    config_struct->qp                = crf;
-    config_struct->rate_control_mode = 0;
-    config_struct->enable_tpl_la     = 1;
+    config_struct->qp                           = crf;
+    config_struct->rate_control_mode            = 0;
+    config_struct->enable_adaptive_quantization = 2;
 
     return EB_ErrorNone;
 }
@@ -1118,7 +1273,54 @@ static EbErrorType str_to_intra_rt(const char *nptr, SvtAv1IntraRefreshType *out
     return EB_ErrorBadParameter;
 }
 
-static EbErrorType str_to_color_primaries(const char *nptr, uint8_t *out) {
+static EbErrorType str_to_asm(const char *nptr, CPU_FLAGS *out) {
+    // need to keep in sync with set_asm_type()
+    // need to handle numbers in here since the numbers to no match the
+    // internal representation
+    const struct {
+        const char *name;
+        CPU_FLAGS   flag;
+    } simds[] = {
+        {"c", 0},
+        {"0", 0},
+        {"mmx", (CPU_FLAGS_MMX << 1) - 1},
+        {"1", (CPU_FLAGS_MMX << 1) - 1},
+        {"sse", (CPU_FLAGS_SSE << 1) - 1},
+        {"2", (CPU_FLAGS_SSE << 1) - 1},
+        {"sse2", (CPU_FLAGS_SSE2 << 1) - 1},
+        {"3", (CPU_FLAGS_SSE2 << 1) - 1},
+        {"sse3", (CPU_FLAGS_SSE3 << 1) - 1},
+        {"4", (CPU_FLAGS_SSE3 << 1) - 1},
+        {"ssse3", (CPU_FLAGS_SSSE3 << 1) - 1},
+        {"5", (CPU_FLAGS_SSSE3 << 1) - 1},
+        {"sse4_1", (CPU_FLAGS_SSE4_1 << 1) - 1},
+        {"6", (CPU_FLAGS_SSE4_1 << 1) - 1},
+        {"sse4_2", (CPU_FLAGS_SSE4_2 << 1) - 1},
+        {"7", (CPU_FLAGS_SSE4_2 << 1) - 1},
+        {"avx", (CPU_FLAGS_AVX << 1) - 1},
+        {"8", (CPU_FLAGS_AVX << 1) - 1},
+        {"avx2", (CPU_FLAGS_AVX2 << 1) - 1},
+        {"9", (CPU_FLAGS_AVX2 << 1) - 1},
+        {"avx512", (CPU_FLAGS_AVX512VL << 1) - 1},
+        {"10", (CPU_FLAGS_AVX512VL << 1) - 1},
+        {"max", CPU_FLAGS_ALL},
+        {"11", CPU_FLAGS_ALL},
+    };
+    const size_t simds_size = sizeof(simds) / sizeof(simds[0]);
+
+    for (size_t i = 0; i < simds_size; i++) {
+        if (!strcmp(nptr, simds[i].name)) {
+            *out = simds[i].flag;
+            return EB_ErrorNone;
+        }
+    }
+
+    *out = CPU_FLAGS_INVALID;
+
+    return EB_ErrorBadParameter;
+}
+
+static EbErrorType str_to_color_primaries(const char *nptr, EbColorPrimaries *out) {
     const struct {
         const char      *name;
         EbColorPrimaries primaries;
@@ -1147,7 +1349,8 @@ static EbErrorType str_to_color_primaries(const char *nptr, uint8_t *out) {
     return EB_ErrorBadParameter;
 }
 
-static EbErrorType str_to_transfer_characteristics(const char *nptr, uint8_t *out) {
+static EbErrorType str_to_transfer_characteristics(const char                *nptr,
+                                                   EbTransferCharacteristics *out) {
     const struct {
         const char               *name;
         EbTransferCharacteristics tfc;
@@ -1182,7 +1385,7 @@ static EbErrorType str_to_transfer_characteristics(const char *nptr, uint8_t *ou
     return EB_ErrorBadParameter;
 }
 
-static EbErrorType str_to_matrix_coefficients(const char *nptr, uint8_t *out) {
+static EbErrorType str_to_matrix_coefficients(const char *nptr, EbMatrixCoefficients *out) {
     const struct {
         const char          *name;
         EbMatrixCoefficients coeff;
@@ -1214,7 +1417,7 @@ static EbErrorType str_to_matrix_coefficients(const char *nptr, uint8_t *out) {
     return EB_ErrorBadParameter;
 }
 
-static EbErrorType str_to_color_range(const char *nptr, uint8_t *out) {
+static EbErrorType str_to_color_range(const char *nptr, EbColorRange *out) {
     const struct {
         const char  *name;
         EbColorRange range;
@@ -1227,6 +1430,50 @@ static EbErrorType str_to_color_range(const char *nptr, uint8_t *out) {
     for (size_t i = 0; i < color_range_size; i++) {
         if (!strcmp(nptr, color_range[i].name)) {
             *out = color_range[i].range;
+            return EB_ErrorNone;
+        }
+    }
+
+    return EB_ErrorBadParameter;
+}
+
+static EbErrorType str_to_chroma_sample_position(const char *nptr, EbChromaSamplePosition *out) {
+    const struct {
+        const char            *name;
+        EbChromaSamplePosition pos;
+    } chroma_sample_positions[] = {
+        {"unknown",   EB_CSP_UNKNOWN},
+        {"vertical",  EB_CSP_VERTICAL},
+        {"left",      EB_CSP_VERTICAL},
+        {"colocated", EB_CSP_COLOCATED},
+        {"topleft",   EB_CSP_COLOCATED},
+    };
+    const size_t chroma_sample_positions_size =
+        sizeof(chroma_sample_positions) / sizeof(chroma_sample_positions[0]);
+
+    for (size_t i = 0; i < chroma_sample_positions_size; i++) {
+        if (!strcmp(nptr, chroma_sample_positions[i].name)) {
+            *out = chroma_sample_positions[i].pos;
+            return EB_ErrorNone;
+        }
+    }
+
+    return EB_ErrorBadParameter;
+}
+
+static EbErrorType str_to_sframe_mode(const char *nptr, EbSFrameMode *out) {
+    const struct {
+        const char  *name;
+        EbSFrameMode mode;
+    } sframe_mode[] = {
+        {"strict", SFRAME_STRICT_BASE},
+        {"nearest", SFRAME_NEAREST_BASE},
+    };
+    const size_t sframe_mode_size = sizeof(sframe_mode) / sizeof(sframe_mode[0]);
+
+    for (size_t i = 0; i < sframe_mode_size; i++) {
+        if (!strcmp(nptr, sframe_mode[i].name)) {
+            *out = sframe_mode[i].mode;
             return EB_ErrorNone;
         }
     }
@@ -1285,10 +1532,19 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *config_
             ? str_to_uint(value, (uint32_t *)&config_struct->intra_refresh_type)
             : EB_ErrorNone;
 
+    if (!strcmp(name, "sframe-mode"))
+        return str_to_sframe_mode(value, &config_struct->sframe_mode) == EB_ErrorBadParameter
+            ? str_to_uint(value, (uint32_t *)&config_struct->sframe_mode)
+            : EB_ErrorNone;
+
+    if (!strcmp(name, "asm"))
+        return str_to_asm(value, &config_struct->use_cpu_flags);
+
     COLOR_OPT("color-primaries", color_primaries);
     COLOR_OPT("transfer-characteristics", transfer_characteristics);
     COLOR_OPT("matrix-coefficients", matrix_coefficients);
     COLOR_OPT("color-range", color_range);
+    COLOR_OPT("chroma-sample-position", chroma_sample_position);
 
     // custom struct fields
     COLOR_METADATA_OPT("mastering-display", mastering_display);
@@ -1321,9 +1577,6 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *config_
         {"lookahead", &config_struct->look_ahead_distance},
         {"tbr", &config_struct->target_bit_rate},
         {"mbr", &config_struct->max_bit_rate},
-#if !FTR_CBR
-        {"vbv-bufsize", &config_struct->vbv_bufsize},
-#endif
         {"scd", &config_struct->scene_change_detection},
         {"max-qp", &config_struct->max_qp_allowed},
         {"min-qp", &config_struct->min_qp_allowed},
@@ -1337,6 +1590,8 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *config_
         {"scm", &config_struct->screen_content_mode},
         {"input-depth", &config_struct->encoder_bit_depth},
         {"compressed-ten-bit-format", &config_struct->compressed_ten_bit_format},
+        {"forced-max-frame-width", &config_struct->forced_max_frame_width},
+        {"forced-max-frame-height", &config_struct->forced_max_frame_height},
     };
     const size_t uint_opts_size = sizeof(uint_opts) / sizeof(uint_opts[0]);
 
@@ -1361,6 +1616,7 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *config_
         {"superres-kf-denom", &config_struct->superres_kf_denom},
         {"fast-decode", &config_struct->fast_decode},
         {"tune", &config_struct->tune},
+        {"film-grain-denoise", &config_struct->film_grain_denoise_apply},
     };
     const size_t uint8_opts_size = sizeof(uint8_opts) / sizeof(uint8_opts[0]);
 
@@ -1411,6 +1667,7 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *config_
         {"tile-rows", &config_struct->tile_rows},
         {"tile-columns", &config_struct->tile_columns},
         {"ss", &config_struct->target_socket},
+        {"sframe-dist", &config_struct->sframe_dist},
     };
     const size_t int_opts_size = sizeof(int_opts) / sizeof(int_opts[0]);
 
@@ -1442,7 +1699,7 @@ EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *config_
     // Bool fields
     const struct {
         const char *name;
-        Bool     *out;
+        Bool       *out;
     } bool_opts[] = {
         {"use-q-file", &config_struct->use_qp_file},
         {"use-fixed-qindex-offsets", &config_struct->use_fixed_qindex_offsets},

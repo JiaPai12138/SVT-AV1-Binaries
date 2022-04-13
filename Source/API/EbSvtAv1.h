@@ -23,9 +23,9 @@ extern "C" {
 struct SvtMetadataArray;
 
 // API Version
-#define SVT_AV1_VERSION_MAJOR 0
-#define SVT_AV1_VERSION_MINOR 9
-#define SVT_AV1_VERSION_PATCHLEVEL 1
+#define SVT_AV1_VERSION_MAJOR 1
+#define SVT_AV1_VERSION_MINOR 0
+#define SVT_AV1_VERSION_PATCHLEVEL 0-rc2
 
 #ifndef SVT_VERSION_MAJOR
 #define SVT_VERSION_MAJOR SVT_AV1_VERSION_MAJOR
@@ -87,11 +87,7 @@ typedef enum EbAv1PictureType {
 value when passing parameters to and from the eBrisk API.  The
 Bool is a 32 bit quantity and is aligned on a 32 bit word boundary.
 */
-#if CLN_DEFINITIONS
 typedef uint8_t Bool;
-#else
-#define Bool uint8_t
-#endif
 #define FALSE 0
 #define TRUE 1
 

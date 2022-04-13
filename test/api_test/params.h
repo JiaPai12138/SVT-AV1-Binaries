@@ -192,36 +192,6 @@ static const vector<uint32_t> invalid_source_height = {
     0, 1, 2, 4, 8, 16, 32, 63, 65, 2161,  // ...
 };
 
-/* The frequecy of images being displayed. If the number is less than 1000,
- * the input frame rate is an integer number between 1 and 60, else the input
- * number is in Q16 format, shifted by 16 bits, where max allowed is 240 fps.
- * If FrameRateNumerator and FrameRateDenominator are both not equal to zero,
- * the encoder will ignore this parameter.
- *
- * Default is 25. */
-static const vector<uint32_t> default_frame_rate = {
-    30 << 16,
-};
-static const vector<uint32_t> valid_frame_rate = {
-    1,
-    24,
-    25,
-    30,
-    50,
-    60,
-    1 << 16,
-    24 << 16,
-    25 << 16,
-    30 << 16,
-    50 << 16,
-    60 << 16,
-    120 << 16,
-    240 << 16,
-};
-static const vector<uint32_t> invalid_frame_rate = {
-    0, 241 << 16, 0xFFFFFFFF  // ...
-};
-
 // TODO: follwoing two parameters should be a combination test
 /* Frame rate numerator. When zero, the encoder will use -fps if
  * FrameRateDenominator is also zero, otherwise an error is returned.
@@ -883,7 +853,7 @@ static const vector<uint32_t> valid_recon_enabled = {FALSE, TRUE};
 static const vector<uint32_t> invalid_recon_enabled = {/** none */};
 
 #if TILES
-/* Log 2 Tile Rows and colums . 0 means no tiling,1 means that we split the
+/* Log 2 Tile Rows and columns . 0 means no tiling,1 means that we split the
  * dimension into 2 Default is 0. */
 static const vector<int32_t> default_tile_columns = {
     0,
@@ -965,73 +935,83 @@ static const vector<uint8_t> invalid_superres_kf_denom = {7};
 // Color description
 /* Color range
  */
-static const vector<uint32_t> default_color_range = {0};
-static const vector<uint32_t> valid_color_range = {0, 1};
-static const vector<uint32_t> invalid_color_range = {};
+static const vector<EbColorRange> default_color_range = {EB_CR_STUDIO_RANGE};
+static const vector<EbColorRange> valid_color_range = {EB_CR_STUDIO_RANGE,
+                                                       EB_CR_FULL_RANGE};
+static const vector<EbColorRange> invalid_color_range = {};
 
 /* Color primaries
  */
-static const vector<uint32_t> default_color_primaries = {2};
-static const vector<uint32_t> valid_color_primaries = {
-    1,
-    2,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    22,
+static const vector<EbColorPrimaries> default_color_primaries = {
+    EB_CICP_CP_UNSPECIFIED};
+static const vector<EbColorPrimaries> valid_color_primaries = {
+    EB_CICP_CP_BT_709,
+    EB_CICP_CP_UNSPECIFIED,
+    EB_CICP_CP_BT_470_M,
+    EB_CICP_CP_BT_470_B_G,
+    EB_CICP_CP_BT_601,
+    EB_CICP_CP_SMPTE_240,
+    EB_CICP_CP_GENERIC_FILM,
+    EB_CICP_CP_BT_2020,
+    EB_CICP_CP_XYZ,
+    EB_CICP_CP_SMPTE_431,
+    EB_CICP_CP_SMPTE_432,
+    EB_CICP_CP_EBU_3213,
 };
-static const vector<uint32_t> invalid_color_primaries = {/*none*/};
+static const vector<EbColorPrimaries> invalid_color_primaries = {/*none*/};
 
 /* Transfer characteristics
  */
-static const vector<uint32_t> default_transfer_characteristics = {2};
-static const vector<uint32_t> valid_transfer_characteristics = {
-    1,
-    2,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17,
-    18,
+static const vector<EbTransferCharacteristics>
+    default_transfer_characteristics = {
+        EB_CICP_TC_UNSPECIFIED,
 };
-static const vector<uint32_t> invalid_transfer_characteristics = {/*none*/};
+static const vector<EbTransferCharacteristics> valid_transfer_characteristics =
+    {
+        EB_CICP_TC_BT_709,
+        EB_CICP_TC_UNSPECIFIED,
+        EB_CICP_TC_BT_470_M,
+        EB_CICP_TC_BT_470_B_G,
+        EB_CICP_TC_BT_601,
+        EB_CICP_TC_SMPTE_240,
+        EB_CICP_TC_LINEAR,
+        EB_CICP_TC_LOG_100,
+        EB_CICP_TC_LOG_100_SQRT10,
+        EB_CICP_TC_IEC_61966,
+        EB_CICP_TC_BT_1361,
+        EB_CICP_TC_SRGB,
+        EB_CICP_TC_BT_2020_10_BIT,
+        EB_CICP_TC_BT_2020_12_BIT,
+        EB_CICP_TC_SMPTE_2084,
+        EB_CICP_TC_SMPTE_428,
+        EB_CICP_TC_HLG,
+};
+static const vector<EbTransferCharacteristics>
+    invalid_transfer_characteristics = {/*none*/};
 
 /* Matrix coeffricients
  */
-static const vector<uint32_t> default_matrix_coefficients = {2};
-static const vector<uint32_t> valid_matrix_coefficients = {
-    1,
-    2,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
+static const vector<EbMatrixCoefficients> default_matrix_coefficients = {
+    EB_CICP_MC_UNSPECIFIED,
 };
-static const vector<uint32_t> invalid_matrix_coefficients = {
-    0};  // not actually invalid, but requires 4:4:4
+static const vector<EbMatrixCoefficients> valid_matrix_coefficients = {
+    EB_CICP_MC_BT_709,
+    EB_CICP_MC_UNSPECIFIED,
+    EB_CICP_MC_FCC,
+    EB_CICP_MC_BT_470_B_G,
+    EB_CICP_MC_BT_601,
+    EB_CICP_MC_SMPTE_240,
+    EB_CICP_MC_SMPTE_YCGCO,
+    EB_CICP_MC_BT_2020_NCL,
+    EB_CICP_MC_BT_2020_CL,
+    EB_CICP_MC_SMPTE_2085,
+    EB_CICP_MC_CHROMAT_NCL,
+    EB_CICP_MC_CHROMAT_CL,
+    EB_CICP_MC_ICTCP,
+};
+static const vector<EbMatrixCoefficients> invalid_matrix_coefficients = {
+    EB_CICP_MC_IDENTITY,  // not actually invalid, but requires 4:4:4
+};
 
 }  // namespace svt_av1_test_params
 

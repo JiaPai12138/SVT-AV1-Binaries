@@ -245,8 +245,8 @@ static void update_firstpass_stats(PictureParentControlSet *pcs_ptr, const FRAME
     SequenceControlSet *scs_ptr = pcs_ptr->scs_ptr;
     TWO_PASS *          twopass = &scs_ptr->twopass;
 
-    const uint32_t   mb_cols          = (scs_ptr->seq_header.max_frame_width + 16 - 1) / 16;
-    const uint32_t   mb_rows          = (scs_ptr->seq_header.max_frame_height + 16 - 1) / 16;
+    const uint32_t   mb_cols          = (scs_ptr->max_input_luma_width + 16 - 1) / 16;
+    const uint32_t   mb_rows          = (scs_ptr->max_input_luma_height + 16 - 1) / 16;
     FIRSTPASS_STATS *this_frame_stats = twopass->stats_buf_ctx->stats_in_end_write;
     FIRSTPASS_STATS  fps;
     // The minimum error here insures some bit allocation to frames even
@@ -354,8 +354,8 @@ static FRAME_STATS accumulate_frame_stats(FRAME_STATS *mb_stats, int mb_rows, in
 void setup_firstpass_data_seg(PictureParentControlSet *ppcs_ptr, int32_t segment_index) {
     SequenceControlSet * scs_ptr           = ppcs_ptr->scs_ptr;
     FirstPassData *      firstpass_data    = &ppcs_ptr->firstpass_data;
-    const uint32_t       mb_cols           = (scs_ptr->seq_header.max_frame_width + 16 - 1) / 16;
-    const uint32_t       mb_rows           = (scs_ptr->seq_header.max_frame_height + 16 - 1) / 16;
+    const uint32_t       mb_cols           = (scs_ptr->max_input_luma_width + 16 - 1) / 16;
+    const uint32_t       mb_rows           = (scs_ptr->max_input_luma_height + 16 - 1) / 16;
     EbPictureBufferDesc *input_picture_ptr = ppcs_ptr->enhanced_picture_ptr;
 
     uint32_t blk_cols = (uint32_t)(input_picture_ptr->width + BLOCK_SIZE_64 - 1) / BLOCK_SIZE_64;
@@ -391,8 +391,8 @@ void setup_firstpass_data_seg(PictureParentControlSet *ppcs_ptr, int32_t segment
 void first_pass_frame_end(PictureParentControlSet *pcs_ptr, uint8_t skip_frame,
                           uint8_t bypass_blk_step, const double ts_duration) {
     SequenceControlSet *scs_ptr = pcs_ptr->scs_ptr;
-    const uint32_t      mb_cols = (scs_ptr->seq_header.max_frame_width + 16 - 1) / 16;
-    const uint32_t      mb_rows = (scs_ptr->seq_header.max_frame_height + 16 - 1) / 16;
+    const uint32_t      mb_cols = (scs_ptr->max_input_luma_width + 16 - 1) / 16;
+    const uint32_t      mb_rows = (scs_ptr->max_input_luma_height + 16 - 1) / 16;
 
     FRAME_STATS *mb_stats = pcs_ptr->firstpass_data.mb_stats;
 
@@ -465,41 +465,15 @@ extern EbErrorType first_pass_signal_derivation_pre_analysis_scs(SequenceControl
     scs_ptr->seq_header.cdef_level /*enable_cdef*/ = 0;
     scs_ptr->seq_header.enable_warped_motion       = 0;
 
-#if CLN_SCS_SIG_DERIV
     scs_ptr->seq_header.enable_superres                 = 0;
     scs_ptr->compound_mode                              = 0;
     scs_ptr->seq_header.order_hint_info.enable_jnt_comp = 0;
     scs_ptr->seq_header.enable_masked_compound          = 0;
     scs_ptr->seq_header.filter_intra_level              = 0;
     scs_ptr->seq_header.enable_interintra_compound      = 0;
+
     // Set the SCD Mode
     scs_ptr->scd_mode = scs_ptr->static_config.scene_change_detection == 0 ? SCD_MODE_0 : SCD_MODE_1;
-#endif
-#if CLN_SCS_CTOR
-    scs_ptr->seq_header.frame_width_bits = 16;
-    scs_ptr->seq_header.frame_height_bits = 16;
-    scs_ptr->seq_header.frame_id_numbers_present_flag = 0;
-    scs_ptr->seq_header.frame_id_length = FRAME_ID_LENGTH;
-    scs_ptr->seq_header.delta_frame_id_length = DELTA_FRAME_ID_LENGTH;
-
-    // 0 - disable dual interpolation filter
-    // 1 - enable vertical and horiz filter selection
-    scs_ptr->seq_header.enable_dual_filter = 0;
-
-    // 0 - force off
-    // 1 - force on
-    // 2 - adaptive
-    scs_ptr->seq_header.seq_force_screen_content_tools = 2;
-
-    // 0 - Not to force. MV can be in 1/4 or 1/8
-    // 1 - force to integer
-    // 2 - adaptive
-    scs_ptr->seq_header.seq_force_integer_mv = 2;
-
-    scs_ptr->seq_header.order_hint_info.enable_ref_frame_mvs = 1;
-    scs_ptr->seq_header.order_hint_info.enable_order_hint = 1;
-    scs_ptr->seq_header.order_hint_info.order_hint_bits = 7;
-#endif
 
     return return_error;
 }
@@ -690,7 +664,7 @@ void *set_first_pass_me_hme_params_oq(MeContext *me_context_ptr, SequenceControl
     me_context_ptr->hme_l1_sa = (SearchArea){8, 8};
     me_context_ptr->hme_l2_sa = (SearchArea){8, 8};
     // Scale up the MIN ME area if low frame rate
-    uint8_t low_frame_rate_flag = (scs_ptr->static_config.frame_rate >> 16) < 50 ? 1 : 0;
+    bool low_frame_rate_flag = (scs_ptr->frame_rate >> 16);
     if (low_frame_rate_flag) {
         me_context_ptr->me_sa.sa_min.width  = (me_context_ptr->me_sa.sa_min.width * 3) >> 1;
         me_context_ptr->me_sa.sa_min.height = (me_context_ptr->me_sa.sa_min.height * 3) >> 1;
@@ -899,9 +873,9 @@ static int open_loop_firstpass_inter_prediction(
     FRAME_STATS *stats, int down_step) {
     int32_t        mb_row  = blk_origin_y >> 4;
     int32_t        mb_col  = blk_origin_x >> 4;
-    const uint32_t mb_cols = (ppcs_ptr->scs_ptr->seq_header.max_frame_width + FORCED_BLK_SIZE - 1) /
+    const uint32_t mb_cols = (ppcs_ptr->scs_ptr->max_input_luma_width + FORCED_BLK_SIZE - 1) /
         FORCED_BLK_SIZE;
-    const uint32_t mb_rows = (ppcs_ptr->scs_ptr->seq_header.max_frame_height + FORCED_BLK_SIZE -
+    const uint32_t mb_rows = (ppcs_ptr->scs_ptr->max_input_luma_height + FORCED_BLK_SIZE -
                               1) /
         FORCED_BLK_SIZE;
     int                   this_inter_error           = this_intra_error;

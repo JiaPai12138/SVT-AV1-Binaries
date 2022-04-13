@@ -19,9 +19,6 @@
 #include "EbObject.h"
 
 #define MINQ_ADJ_LIMIT 48
-#if !FRFCTR_RC_P9
-#define MINQ_ADJ_LIMIT_CQ 20
-#endif
 #define HIGH_UNDERSHOOT_RATIO 2
 #define CCOEFF_INIT_FACT 2
 #define SAD_CLIP_COEFF 5
@@ -72,9 +69,9 @@ typedef enum rate_factor_level {
     KF_STD             = 5,
     RATE_FACTOR_LEVELS = 6
 } rate_factor_level;
-// max bit rate average period in second. default is set to 2 second
-#define MAX_RATE_AVG_PERIOD_IN_SEC 2
 #define CODED_FRAMES_STAT_QUEUE_MAX_DEPTH 2000
+// max bit rate average period
+#define MAX_RATE_AVG_PERIOD (CODED_FRAMES_STAT_QUEUE_MAX_DEPTH>>1)
 #define CRITICAL_BUFFER_LEVEL 15
 #define OPTIMAL_BUFFER_LEVEL 70
 /**************************************
@@ -84,40 +81,23 @@ typedef struct coded_frames_stats_entry {
     EbDctor  dctor;
     uint64_t picture_number;
     int64_t  frame_total_bit_actual;
-    Bool   end_of_sequence_flag;
+    Bool     end_of_sequence_flag;
 } coded_frames_stats_entry;
 
 extern EbErrorType rate_control_coded_frames_stats_context_ctor(coded_frames_stats_entry *entry_ptr,
                                                                 uint64_t picture_number);
 typedef struct {
-    int    last_boosted_qindex; // Last boosted GF/KF/ARF q
-    int    gfu_boost;
-    int    kf_boost;
-    double rate_correction_factors[MAX_TEMPORAL_LAYERS + 1];
-#if !FRFCTR_RC_P5
-    int    min_gf_interval;
-    int    max_gf_interval;
-#endif
-#if !FRFCTR_RC_P1
-    int    frames_till_gf_update_due;
-#endif
-#if FTR_CBR
-    int    onepass_cbr_mode; // 0: not 1pass cbr, 1: 1pass cbr for low delay
-#else
-    int    onepass_cbr_mode; // 0: not 1pass cbr, 1: 1pass cbr normal, 2: 1pass cbr real time
-#endif
-    int    baseline_gf_interval;
-    int    constrained_gf_group;
-    int    frames_to_key;
-    int    frames_since_key;
-    int    this_key_frame_forced;
-#if !FRFCTR_RC_P2
-    int    is_src_frame_alt_ref;
-#endif
+    int     last_boosted_qindex; // Last boosted GF/KF/ARF q
+    int     gfu_boost;
+    int     kf_boost;
+    double  rate_correction_factors[MAX_TEMPORAL_LAYERS + 1];
+    int     onepass_cbr_mode; // 0: not 1pass cbr, 1: 1pass cbr for low delay
+    int     baseline_gf_interval;
+    int     constrained_gf_group;
+    int     frames_to_key;
+    int     frames_since_key;
+    int     this_key_frame_forced;
     int     avg_frame_bandwidth; // Average frame size target for clip
-#if !FRFCTR_RC_P1
-    int     min_frame_bandwidth; // Minimum allocation used for any frame
-#endif
     int     max_frame_bandwidth; // Maximum burst rate allowed for a frame.
     int     avg_frame_qindex[FRAME_TYPES];
     int64_t buffer_level;
@@ -162,10 +142,6 @@ typedef struct {
 
     // gop bit budget
     int64_t gf_group_bits;
-#if !FRFCTR_RC_P1
-    // Total number of stats used only for kf_boost calculation.
-    int num_stats_used_for_kf_boost;
-#endif
     // Total number of stats used only for gfu_boost calculation.
     int num_stats_used_for_gfu_boost;
     // Total number of stats required by gfu_boost calculation.

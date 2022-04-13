@@ -135,25 +135,25 @@ typedef struct SequenceControlSet {
     uint8_t compound_mode;
 
     /*!< Sequence resolution parameters */
-    uint32_t          chroma_format_idc;
-    uint16_t          subsampling_x; // add chroma subsampling parameters
-    uint16_t          subsampling_y;
-    uint16_t          max_input_luma_width;
-    uint16_t          max_input_luma_height;
-    uint16_t          max_input_chroma_width;
-    uint16_t          max_input_chroma_height;
-    uint16_t          max_input_pad_bottom;
-    uint16_t          max_input_pad_right;
-    uint32_t          chroma_width;
-    uint32_t          chroma_height;
-    uint32_t          pad_right;
-    uint32_t          pad_bottom;
-    uint16_t          left_padding;
-    uint16_t          top_padding;
-    uint16_t          right_padding;
-    uint16_t          bot_padding;
-    uint32_t          frame_rate;
-    uint32_t          encoder_bit_depth;
+    uint32_t chroma_format_idc;
+    uint16_t subsampling_x; // add chroma subsampling parameters
+    uint16_t subsampling_y;
+    uint16_t max_input_luma_width; // input luma width aligned to 8, this is used during encoding
+    uint16_t max_input_luma_height; // input luma height aligned to 8, this is used during encoding
+    uint16_t max_input_chroma_width;
+    uint16_t max_input_chroma_height;
+    uint16_t max_input_pad_bottom;
+    uint16_t max_input_pad_right;
+    uint32_t chroma_width;
+    uint32_t chroma_height;
+    uint32_t pad_right;
+    uint32_t pad_bottom;
+    uint16_t left_padding;
+    uint16_t top_padding;
+    uint16_t right_padding;
+    uint16_t bot_padding;
+    uint32_t frame_rate; //stored in Q16
+    uint32_t encoder_bit_depth;
     EbInputResolution input_resolution;
 
     /*!< Super block parameters set for the stream */
@@ -167,13 +167,6 @@ typedef struct SequenceControlSet {
     uint16_t max_block_cnt;
     /*!< Restoration Unit parameters set for the stream */
     int32_t rest_units_per_tile;
-#if !CLN_SCS_CTOR
-    /*!< Block limits */
-    uint8_t max_blk_size;
-    uint8_t min_blk_size;
-    uint8_t max_intra_size;
-    uint8_t min_intra_size;
-#endif
     /*!< Sub picture reagions for picture analysis */
     uint32_t picture_analysis_number_of_regions_per_width;
     uint32_t picture_analysis_number_of_regions_per_height;
@@ -292,8 +285,8 @@ typedef struct SequenceControlSet {
     *
     * Default is 1. */
     Bool enable_global_motion;
-    int    sg_filter_mode;
-    int    wn_filter_mode;
+    int  sg_filter_mode;
+    int  wn_filter_mode;
 
     /* inter intra compound
     *
@@ -322,12 +315,6 @@ typedef struct SequenceControlSet {
     *
     * Default is -1. */
     int new_nearest_comb_inject;
-#if !CLN_SCS_CTOR
-    /* nsq table
-    *
-    * Default is -1. */
-    int nsq_table;
-#endif
     /* frame end cdf update
     *
     * Default is -1. */
@@ -347,18 +334,6 @@ typedef struct SequenceControlSet {
     *
     * Default is -1. */
     int compound_level;
-#if !OPT_CAND_BUFF_MEM
-    /* Chroma mode
-    *
-    * Level                Settings
-    * CHROMA_MODE_0  0     Full chroma search @ MD
-    * CHROMA_MODE_1  1     Fast chroma search @ MD
-    * CHROMA_MODE_2  2     Chroma blind @ MD + CFL @ EP
-    * CHROMA_MODE_3  3     Chroma blind @ MD + no CFL @ EP
-    *
-    * Default is -1 (AUTO) */
-    int set_chroma_mode;
-#endif
     /* Disable chroma from luma (CFL)
     *
     * Default is -1 (auto) */
@@ -398,12 +373,6 @@ typedef struct SequenceControlSet {
     *
     * Default is - 1. */
     int pic_based_rate_est;
-#if !CLN_SCS_CTOR
-    /* Flag to enable the use of non-swaure partitions
-    *
-    * Default is 1. */
-    Bool ext_block_flag;
-#endif
     /* Flag to control intraBC mode
     *  0      OFF
     *  1      slow
@@ -447,33 +416,15 @@ typedef struct SequenceControlSet {
     uint8_t calculate_variance;
 
 } SequenceControlSet;
-#if !CLN_SCS_CTOR
-typedef struct EbSequenceControlSetInitData {
-    EncodeContext *encode_context_ptr;
-    int32_t        sb_size;
-} EbSequenceControlSetInitData;
-#endif
 typedef struct EbSequenceControlSetInstance {
     EbDctor             dctor;
     EncodeContext      *encode_context_ptr;
     SequenceControlSet *scs_ptr;
-#if !FIX_USE_ONE_SCS
-    EbHandle            config_mutex;
-#endif
 } EbSequenceControlSetInstance;
 
 /**************************************
      * Extern Function Declarations
      **************************************/
-#if !FIX_USE_ONE_SCS
-extern EbErrorType svt_sequence_control_set_creator(EbPtr *object_dbl_ptr,
-                                                    EbPtr  object_init_data_ptr);
-
-extern EbErrorType svt_sequence_control_set_ctor(SequenceControlSet *object,
-                                                 EbPtr               object_init_data_ptr);
-
-extern EbErrorType copy_sequence_control_set(SequenceControlSet *dst, SequenceControlSet *src);
-#endif
 extern EbErrorType svt_sequence_control_set_instance_ctor(EbSequenceControlSetInstance *object_ptr);
 
 extern EbErrorType sb_params_init(SequenceControlSet *scs_ptr);

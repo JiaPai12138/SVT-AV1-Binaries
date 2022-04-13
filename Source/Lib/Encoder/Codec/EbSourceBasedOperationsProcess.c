@@ -717,12 +717,12 @@ void tpl_mc_flow_dispenser_sb_generic(EncodeContext      *encode_context_ptr,
                                                                    bsize,
                                                                    bsize);
 
-                        Bool  enable_paeth   = pcs_ptr->scs_ptr->enable_paeth == DEFAULT
-                               ? TRUE
-                               : (Bool)pcs_ptr->scs_ptr->enable_paeth;
-                        Bool  enable_smooth  = pcs_ptr->scs_ptr->enable_smooth == DEFAULT
-                              ? TRUE
-                              : (Bool)pcs_ptr->scs_ptr->enable_smooth;
+                        Bool    enable_paeth   = pcs_ptr->scs_ptr->enable_paeth == DEFAULT
+                                 ? TRUE
+                                 : (Bool)pcs_ptr->scs_ptr->enable_paeth;
+                        Bool    enable_smooth  = pcs_ptr->scs_ptr->enable_smooth == DEFAULT
+                                ? TRUE
+                                : (Bool)pcs_ptr->scs_ptr->enable_smooth;
                         uint8_t intra_mode_end = pcs_ptr->tpl_ctrls.tpl_opt_flag ? DC_PRED
                             : enable_paeth                                       ? PAETH_PRED
                             : enable_smooth                                      ? SMOOTH_H_PRED
@@ -747,8 +747,8 @@ void tpl_mc_flow_dispenser_sb_generic(EncodeContext      *encode_context_ptr,
                                 left_col  = left_data + MAX_TPL_SIZE;
                                 filter_intra_edge(NULL,
                                                   ois_intra_mode,
-                                                  scs_ptr->seq_header.max_frame_width,
-                                                  scs_ptr->seq_header.max_frame_height,
+                                                  scs_ptr->max_input_luma_width,
+                                                  scs_ptr->max_input_luma_height,
                                                   p_angle,
                                                   (int32_t)mb_origin_x,
                                                   (int32_t)mb_origin_y,
@@ -1094,8 +1094,8 @@ void tpl_mc_flow_dispenser_sb_generic(EncodeContext      *encode_context_ptr,
                 if (av1_is_directional_mode((PredictionMode)ois_intra_mode)) {
                     filter_intra_edge(NULL,
                                       ois_intra_mode,
-                                      scs_ptr->seq_header.max_frame_width,
-                                      scs_ptr->seq_header.max_frame_height,
+                                      scs_ptr->max_input_luma_width,
+                                      scs_ptr->max_input_luma_height,
                                       p_angle,
                                       mb_origin_x,
                                       mb_origin_y,
@@ -1201,8 +1201,8 @@ void tpl_mc_flow_dispenser_sb_generic(EncodeContext      *encode_context_ptr,
    Assign TPL dispenser segments
 */
 Bool assign_tpl_segments(EncDecSegments *segmentPtr, uint16_t *segmentInOutIndex,
-                           TplDispResults *taskPtr, int32_t frame_idx, EbFifo *srmFifoPtr) {
-    Bool   continue_processing_flag = FALSE;
+                         TplDispResults *taskPtr, int32_t frame_idx, EbFifo *srmFifoPtr) {
+    Bool     continue_processing_flag = FALSE;
     uint32_t row_segment_index        = 0;
     uint32_t segment_index;
     uint32_t right_segment_index;
@@ -1960,8 +1960,7 @@ EbErrorType tpl_mc_flow(EncodeContext *encode_context_ptr, SequenceControlSet *s
 
     // When super-res recode is actived, don't release pa_ref_objs until final loop is finished
     // Although tpl-la won't be enabled in super-res FIXED or RANDOM mode, here we use the condition to align with that in initial rate control process
-    Bool release_pa_ref = (scs_ptr->static_config.superres_mode <= SUPERRES_RANDOM) ? TRUE
-                                                                                      : FALSE;
+    Bool release_pa_ref = (scs_ptr->static_config.superres_mode <= SUPERRES_RANDOM) ? TRUE : FALSE;
     for (uint32_t i = 0; i < pcs_ptr->tpl_group_size; i++) {
         if (release_pa_ref) {
             if (pcs_ptr->tpl_group[i]->slice_type == P_SLICE) {
@@ -2154,11 +2153,7 @@ void *source_based_operations_kernel(void *input_ptr) {
                                                         in_results_wrapper_ptr->object_ptr;
         PictureParentControlSet *pcs_ptr = (PictureParentControlSet *)
                                                in_results_ptr->pcs_wrapper_ptr->object_ptr;
-#if FIX_REMOVE_SCS_WRAPPER
-        SequenceControlSet *scs_ptr = pcs_ptr->scs_ptr;
-#else
-        SequenceControlSet *scs_ptr    = (SequenceControlSet *)pcs_ptr->scs_wrapper_ptr->object_ptr;
-#endif
+        SequenceControlSet *scs_ptr    = pcs_ptr->scs_ptr;
         context_ptr->complete_sb_count = 0;
 
         if (in_results_ptr->superres_recode) {
@@ -2179,9 +2174,8 @@ void *source_based_operations_kernel(void *input_ptr) {
                 tpl_prep_info(pcs_ptr);
                 tpl_mc_flow(scs_ptr->encode_context_ptr, scs_ptr, pcs_ptr, context_ptr);
             }
-            Bool release_pa_ref = (scs_ptr->static_config.superres_mode <= SUPERRES_RANDOM)
-                ? TRUE
-                : FALSE;
+            Bool release_pa_ref = (scs_ptr->static_config.superres_mode <= SUPERRES_RANDOM) ? TRUE
+                                                                                            : FALSE;
             // Release Pa Ref if lad_mg is 0 and P slice and not flat struct (not belonging to any TPL group)
             if (release_pa_ref && /*scs_ptr->lad_mg == 0 &&*/ pcs_ptr->reference_released == 0) {
                 release_pa_reference_objects(scs_ptr, pcs_ptr);
@@ -2196,7 +2190,7 @@ void *source_based_operations_kernel(void *input_ptr) {
         uint32_t sb_index;
         for (sb_index = 0; sb_index < sb_cnt; ++sb_index) {
             SbParams *sb_params      = &pcs_ptr->sb_params_array[sb_index];
-            Bool    is_complete_sb = sb_params->is_complete_sb;
+            Bool      is_complete_sb = sb_params->is_complete_sb;
             if (is_complete_sb) {
                 context_ptr->complete_sb_count++;
             }
