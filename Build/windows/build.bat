@@ -15,10 +15,10 @@ cd /d "%~dp0"
 
 :: Set defaults to prevent inheriting
 set "build=y"
-:: Default is debug
-set "buildtype=Debug"
-:: Default is shared
-set "shared=ON"
+:: Default is release
+set "buildtype=Release"
+:: Default is not shared
+set "shared=OFF"
 set "GENERATOR="
 :: (cmake -G 2>&1 | Select-String -SimpleMatch '*').Line.Split('=')[0].TrimEnd().Replace('* ','')
 :: Default is not building unit tests

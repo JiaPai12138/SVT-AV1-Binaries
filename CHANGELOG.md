@@ -44,8 +44,8 @@ Standard bitdepth (Bosphorus 1080p):
 | 6                             | 1.40x  |
 | 7 (against 2.2 preset 8)      | 1.50x  |
 | 8 (against 2.2 preset 9)      | 1.61x  |
-| 9 (against 2.2 preset 10      | 1.31x  |
-| 10 (against 2.2 preset 11 )   | 1.29x  |
+| 9 (against 2.2 preset 10)     | 1.31x  |
+| 10 (against 2.2 preset 11)    | 1.29x  |
 | 11 (against 2.2 preset 12/13) | 1.24x  |
 
 High bitdepth (Bosphorus 2160p):
