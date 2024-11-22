@@ -22,7 +22,7 @@ jobs:
                   Compress-Archive Bin\Release SVT-AV1-windows-x64.zip
             - name: Create Release
               id: create_release
-              uses: uses: iamkubi/github-release@v2.0.4
+              uses: iamkubi/github-release@v2.0.4
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
