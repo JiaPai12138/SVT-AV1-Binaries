@@ -10,7 +10,7 @@ jobs:
         strategy:
             fail-fast: true
         steps:
-            - uses: actions/checkout@v2.3.5
+            - uses: actions/checkout@v4.2.2
             - name: Setup NASM
               run: |
                   choco install nasm
@@ -22,7 +22,7 @@ jobs:
                   Compress-Archive Bin\Release SVT-AV1-windows-x64.zip
             - name: Create Release
               id: create_release
-              uses: actions/create-release@v1.1.4
+              uses: uses: iamkubi/github-release@v2.0.4
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
@@ -32,7 +32,7 @@ jobs:
                   prerelease: false
             - name: Upload binaries
               id: upload-binaries
-              uses: actions/upload-release-asset@v1.0.2
+              uses: sekwah41/upload-release-assets@v1.1.0
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
