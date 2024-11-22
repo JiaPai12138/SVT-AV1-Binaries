@@ -1,6 +1,8 @@
+[Top level](../README.md)
+
 # Deblocking Loop Filter Appendix
 
-## 1.  Description of the algorithm
+## 1. Description of the algorithm
 
 The deblocking loop filter is used to address blocking artifacts in
 reconstructed pictures. The filter was developed based on VP9 deblocking
@@ -24,7 +26,7 @@ edges. The main idea behind the filter can be summarized as follows:
 |--- |--- |--- |--- |--- |--- |
 |>TX_8x8|Yes|Filter14 (13-tap)|14|Filter6 (5-tap)|6|
 ||No|Filter8 (7-tap)/ Filter4|4|Filter4|4|
-|TX_8x8|Yes|Filter8 (7-tap)|8|Filter6 (5-tap)|6|
+| TX_8x8 | Yes | Filter8 (7-tap) | 8 | Filter6 (5-tap) | 6 |
 ||No|Filter4|4|Filter4|4|
 |TX_4x4|-|Filter4|4|Filter4|4|
 
@@ -32,7 +34,7 @@ edges. The main idea behind the filter can be summarized as follows:
 A block diagram illustrating the flow of the different steps involved in
 filtering is given in Figure 1 below.
 
-![dlf_fig1](./img/dlf_fig1.png)
+![dlf_fig1](./img/dlf_fig1.svg)
 
 ##### Figure 1. Steps in the loop filter decisions making process.
 
@@ -79,15 +81,18 @@ where
     segments.
   - Mode delta and reference delta are determined as follows:
     - Define ```scale = 1 << (((filter_level for the frame) + (segment
-      delta)) >>5 )```
-    - ```mode delta = mode_deltas * scale```, where ```mode_deltas``` is
-      obtained from Table 2.
-    - Reference delta = ```ref_deltas * scale```, where ```ref_deltas``` is
-      obtained from Table 3 below.
+      delta)) >> 5 )```
+    - ```mode delta = mode_deltas[mode_lf_lut[mode]] * scale```, where ```mode_deltas``` is
+      specified for each frame (default is 0), the mode is the prediction mode of the block,
+      and mode_lf_lut is obtained from Table 2.
+    - Reference delta = ```ref_deltas[ref_frame] * scale```, where ref_frame is the 0th ref frame, and
+      the ```ref_deltas```is specified for each from, with the default values obtained from Table 3 below.
 
-##### Table 2. Mode deltas for the loop filter level.
+Note that delta values are not enabled in SVT-AV1.
 
-| **Intra modes** | **mode\_deltas** | **Inter modes**    | **mode\_deltas** |
+##### Table 2. Mode deltas offset for the loop filter level.
+
+| **Intra modes** | **mode\_lf\_lut** | **Inter modes**    | **mode\_lf\_lut** |
 | --------------- | ---------------- | ------------------ | ---------------- |
 | DC\_PRED        | 0                | NEARESTMV          | 1                |
 | V\_PRED         | 0                | NEARMV             | 1                |
@@ -99,11 +104,11 @@ where
 | D203\_PRED      | 0                | NEW\_NEARESTMV     | 1                |
 | D67\_PRED       | 0                | NEAR\_NEWMV        | 1                |
 | SMOOTH\_PRED    | 0                | NEW\_NEARMV        | 1                |
-| SMOOTH\_V\_PRED | 0                | GLOBAL\_GLOBALMV   | 1                |
+| SMOOTH\_V\_PRED | 0                | GLOBAL\_GLOBALMV   | 0                |
 | SMOOTH\_H\_PRED | 0                | NEW\_NEWMV         | 1                |
 | PAETH\_PRED     | 0                |                    |                  |
 
-##### Table 3. Reference deltas for the loop filter level.
+##### Table 3. Default reference deltas for the loop filter level.
 
 | **Reference Picture** | **Default ref\_deltas** |
 | --------------------- | ----------------------- |
@@ -160,12 +165,11 @@ Edge Variance Mask (Hev\_Mask), Flat\_Mask, Flat\_Mask2
 
         If
 
-        - (ABS( ![math](http://latex.codecogs.com/gif.latex?pi) – ![math](http://latex.codecogs.com/gif.latex?pi-1) ) \> limit, i=1,…,n; OR
+        - $`ABS(\pi-(\pi-1)) > limit, i=1,…,n`$; OR
 
-        - (ABS( ![math](http://latex.codecogs.com/gif.latex?q_{i}) – ![math](http://latex.codecogs.com/gif.latex?q_{i-1}) ) \> limit, i=1,…,n; OR
+        - $`ABS(q_{i} – q_{i-1}) > limit, i=1,…,n`$; OR
 
-        - (ABS( ![math](http://latex.codecogs.com/gif.latex?p_{0}) - ![math](http://latex.codecogs.com/gif.latex?q_{0}) ) \* 2 + ABS( ![math](http://latex.codecogs.com/gif.latex?p_{1}) -
-        ![math](http://latex.codecogs.com/gif.latex?q_{1}) ) / 2 \> blimit)
+        - $`ABS(p_{0} - q_{0}) * 2 + ABS(p_{1} -q_{1}) / 2 > blimit`$.
 
         then the edge is most likely a true edge. In that case, do not filter
         the tested samples and set Filter\_Mask to zero. Otherwise,
@@ -174,8 +178,8 @@ Edge Variance Mask (Hev\_Mask), Flat\_Mask, Flat\_Mask2
   - Hev\_Mask: Used to identify edges with large change in pixel values
     on either side of the edge. (See the function ```hev_mask```)
 
-       If ABS(p1-p0) \> thresh OR ABS(p1-p0) \> thresh, then Hev\_Mask = 1,
-       else Hev\_Mask = 0.
+       If $`ABS(p_1-p_0) > thresh$ OR $ABS(p_1-p_0) > thresh`$, then $`Hev\_Mask = 1`$,
+       else $`Hev\_Mask = 0`$.
 
   - Flat\_Mask: Considered when Filter\_Length \>= 6. Indicates whether
     samples 0,…,n on each side of the boundary belong to relatively flat
@@ -184,9 +188,9 @@ Edge Variance Mask (Hev\_Mask), Flat\_Mask, Flat\_Mask2
 
     Flat\_Mask = 1 when the following conditions are true:
 
-    - abs(![math](http://latex.codecogs.com/gif.latex?p_{i}) - ![math](http://latex.codecogs.com/gif.latex?p_{0})) \<= thresh, i=1,…,n; AND
+    - $`ABS(p_{i} - p_{0}) <= thresh, i=1,…,n`$; AND
 
-    - abs(![math](http://latex.codecogs.com/gif.latex?p_{i}) - ![math](http://latex.codecogs.com/gif.latex?p_{0})) \<= thresh, i=1,…,n
+    - $`ABS(p_{i} - p_{0}) <= thresh, i=1,…,n`$
 
     Otherwise, Flat\_Mask = 0.
 
@@ -195,8 +199,8 @@ Edge Variance Mask (Hev\_Mask), Flat\_Mask, Flat\_Mask2
     flat areas.
 
     Flat\_Mask2 = 1 when the following conditions are true:
-    ABS(![math](http://latex.codecogs.com/gif.latex?p_{i}) - ![math](http://latex.codecogs.com/gif.latex?p_{0})) \<= thresh, i=4,…,6; AND
-    ABS(![math](http://latex.codecogs.com/gif.latex?q_{i}) - ![math](http://latex.codecogs.com/gif.latex?q_{0})) \<= thresh, i=4,…,6. Otherwise,
+    $`ABS(p_{i} - p_{0}) <= thresh, i=4,…,6`$; and
+    $`ABS(q_{i} - q_{0}) <= thresh, i=4,…,6`$. Otherwise,
     Flat\_Mask2 = 0.
 
 ### Filtering decision making process
@@ -220,7 +224,7 @@ The steps involved in the filtering operation are as follows:
 
 The filtering decisions are outlined in the diagram shown in Figure 2 below.
 
-![dlf_fig2](./img/dlf_fig2.png)
+![dlf_fig2](./img/dlf_fig2.svg)
 
 ##### Figure 2. Flow of the loop filter decision making process.
 
@@ -229,20 +233,20 @@ operation are outlined below. Figure 3 below indicates the positions
 of the samples across the horizontal edge to be filtered, with similar
 arrangement of the samples for the case of a vertical edge.
 
-![dlf_fig3](./img/dlf_fig3.png)
+![dlf_fig3](./img/dlf_fig3.svg)
 
 ##### Figure 3. Sample positions across the horizontal edge to be filtered.
 
 *Filter4:* Modifies up to two samples on each side of the boundary,
   depending on High Variance Edge Mask (Hev\_Mask). Rough outline of
   the main idea:
-  - Hev\_Mask = 1 ![r_arrow](./img/r_arrow.png) only q0 and p0 are filtered.
-      - Delta = ((![math](http://latex.codecogs.com/gif.latex?p_{1}) – ![math](http://latex.codecogs.com/gif.latex?q_{1})) + 3(![math](http://latex.codecogs.com/gif.latex?q_{0})-![math](http://latex.codecogs.com/gif.latex?p_{0})))/8
-      - q0 ![r_arrow](./img/l_arrow.png) q0 – Delta; p0 ![r_arrow](./img/l_arrow.png) p0 + Delta
-  - Hev\_Mask = 0 ![r_arrow](./img/r_arrow.png) q0, q1, p0 and p1 are filtered.
-      - Delta = 3(q0-p0)/8
-      - q0 ![r_arrow](./img/l_arrow.png) q0 - Delta; p0 ![r_arrow](./img/l_arrow.png) p0 + Delta
-      - q1 ![r_arrow](./img/l_arrow.png) q1 - Delta/2; p1 ![r_arrow](./img/l_arrow.png) p1+Delta/2
+  - Hev\_Mask = 1 $`\rightarrow`$ only q0 and p0 are filtered.
+      - $`Delta = ((p_{1} – q_{1}) + 3(q_{0}-p_{0}))/8`$
+      - $`q0 \leftarrow  q0 – Delta; p0 \leftarrow  p0 + Delta`$
+  - Hev\_Mask = 0 $`\rightarrow`$ q0, q1, p0 and p1 are filtered.
+      - $`Delta = 3(q0-p0)/8`$
+      - $`q0 \leftarrow q0 - Delta; p0 \leftarrow p0 + Delta`$
+      - $`q1 \leftarrow q1 - Delta/2; p1 \leftarrow p1+Delta/2`$
 
 *Filter6*
 
@@ -250,22 +254,22 @@ arrangement of the samples for the case of a vertical edge.
 - Applies to chroma planes only.
 - Modifies two samples on each side of the edge. (See the function
 filter6)
-  - p1 ![r_arrow](./img/l_arrow.png) (p2 \* 3 + p1 \* 2 + p0 \* 2 + q0 + 4)\>\>3;
-  - p0 ![r_arrow](./img/l_arrow.png) (p2 + p1 \* 2 + p0 \* 2 + q0 \* 2 + q1 + 4)\>\>3;
-  - q0 ![r_arrow](./img/l_arrow.png) (p1 + p0 \* 2 + q0 \* 2 + q1 \* 2 + q2 + 4)\>\>3;
-  - q1 ![r_arrow](./img/l_arrow.png) (p0 + q0 \* 2 + q1 \* 2 + q2 \* 3 + 4)\>\>3;
+  - $`p1 \leftarrow (p2 * 3 + p1 * 2 + p0 * 2 + q0 + 4) \gg 3`$;
+  - $`p0 \leftarrow (p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + 4)\gg 3`$;
+  - $`q0 \leftarrow (p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + 4)\gg 3`$;
+  - $`q1 \leftarrow (p0 + q0 * 2 + q1 * 2 + q2 * 3 + 4)\gg 3`$;
 
 *Filter8*
 - 7-tap filter: \[1, 1, 1, 2, 1, 1, 1\]
 - Applies to luma plane only.
 - Modifies three samples on each side of the edge. (See the function
 filter8)
-  - p2 ![r_arrow](./img/l_arrow.png) (p3 + p3 + p3 + 2 \* p2 + p1 + p0 + q0 + 4)\>\>3;
-  - p1 ![r_arrow](./img/l_arrow.png) (p3 + p3 + p2 + 2 \* p1 + p0 + q0 + q1 + 4)\>\>3;
-  - p0 ![r_arrow](./img/l_arrow.png) (p3 + p2 + p1 + 2 \* p0 + q0 + q1 + q2 + 4)\>\>3;
-  - q0 ![r_arrow](./img/l_arrow.png) (p2 + p1 + p0 + 2 \* q0 + q1 + q2 + q3 + 4)\>\>3;
-  - q1 ![r_arrow](./img/l_arrow.png) (p1 + p0 + q0 + 2 \* q1 + q2 + q3 + q3 + 4)\>\>3;
-  - q2 ![r_arrow](./img/l_arrow.png) (p0 + q0 + q1 + 2 \* q2 + q3 + q3 + q3 + 4)\>\>3;
+  - $`p2 \leftarrow (p3 + p3 + p3 + 2 * p2 + p1 + p0 + q0 + 4)\gg 3`$;
+  - $`p1 \leftarrow (p3 + p3 + p2 + 2 * p1 + p0 + q0 + q1 + 4)\gg 3`$;
+  - $`p0 \leftarrow (p3 + p2 + p1 + 2 * p0 + q0 + q1 + q2 + 4)\gg 3`$;
+  - $`q0 \leftarrow (p2 + p1 + p0 + 2 * q0 + q1 + q2 + q3 + 4)\gg 3`$;
+  - $`q1 \leftarrow (p1 + p0 + q0 + 2 * q1 + q2 + q3 + q3 + 4)\gg 3`$;
+  - $`q2 \leftarrow (p0 + q0 + q1 + 2 * q2 + q3 + q3 + q3 + 4)\gg 3`$;
 
 *Filter14*
 
@@ -273,32 +277,22 @@ filter8)
 - Applies to luma plane only.
 - Modifies six samples on each side of the edge. (See the function
 filter14)
-  - p5 ![r_arrow](./img/l_arrow.png) (p6 \* 7 + p5 \* 2 + p4 \* 2 + p3 + p2 + p1 + p0 + q0 + 8)\>\>4,
-  - p4 ![r_arrow](./img/l_arrow.png) (p6 \* 5 + p5 \* 2 + p4 \* 2 + p3 \* 2 + p2 + p1 + p0 + q0 + q1 +
-    8)\>\>4
-  - p3 ![r_arrow](./img/l_arrow.png) (p6 \* 4 + p5 + p4 \* 2 + p3 \* 2 + p2 \* 2 + p1 + p0 + q0 + q1 +
-    q2 + 8)\>\>4
-  - p2 ![r_arrow](./img/l_arrow.png) (p6 \* 3 + p5 + p4 + p3 \* 2 + p2 \* 2 + p1 \* 2 + p0 + q0 + q1 +
-    q2 + q3 + 8)\>\>4
-  - p1 ![r_arrow](./img/l_arrow.png) (p6 \* 2 + p5 + p4 + p3 + p2 \* 2 + p1 \* 2 + p0 \* 2 + q0 + q1 +
-    q2 + q3 + q4 + 8)\>\>4
-  - p0 ![r_arrow](./img/l_arrow.png) (p6 + p5 + p4 + p3 + p2 + p1 \* 2 + p0 \* 2 + q0 \* 2 + q1 + q2 +
-    q3 + q4 + q5 + 8)\>\>4
-  - q0 ![r_arrow](./img/l_arrow.png) (p5 + p4 + p3 + p2 + p1 + p0 \* 2 + q0 \* 2 + q1 \* 2 + q2 + q3 +
-    q4 + q5 + q6 + 8)\>\>4
-  - q1 ![r_arrow](./img/l_arrow.png) (p4 + p3 + p2 + p1 + p0 + q0 \* 2 + q1 \* 2 + q2 \* 2 + q3 + q4 +
-    q5 + q6 \* 2 + 8)\>\>4
-  - q2 ![r_arrow](./img/l_arrow.png) (p3 + p2 + p1 + p0 + q0 + q1 \* 2 + q2 \* 2 + q3 \* 2 + q4 + q5 +
-    q6 \* 3 + 8)\>\>4
-  - q3 ![r_arrow](./img/l_arrow.png) (p2 + p1 + p0 + q0 + q1 + q2 \* 2 + q3 \* 2 + q4 \* 2 + q5 + q6
-    \* 4 +8)\>\>4
-  - q4 ![r_arrow](./img/l_arrow.png) (p1 + p0 + q0 + q1 + q2 + q3 \* 2 + q4 \* 2 + q5 \* 2 + q6 \* 5 +
-    8)\>\>4
-  - q5 ![r_arrow](./img/l_arrow.png) (p0 + q0 + q1 + q2 + q3 + q4 \* 2 + q5 \* 2 + q6 \* 7 + 8)\>\>4
+  - $`p5 \leftarrow (p6 * 7 + p5 * 2 + p4 * 2 + p3 + p2 + p1 + p0 + q0 + 8)\gg 4`$,
+  - $`p4 \leftarrow (p6 * 5 + p5 * 2 + p4 * 2 + p3 * 2 + p2 + p1 + p0 + q0 + q1 + 8)\gg 4`$
+  - $`p3 \leftarrow (p6 * 4 + p5 + p4 * 2 + p3 * 2 + p2 * 2 + p1 + p0 + q0 + q1 + q2 + 8)\gg 4`$
+  - $`p2 \leftarrow (p6 * 3 + p5 + p4 + p3 * 2 + p2 * 2 + p1 * 2 + p0 + q0 + q1 + q2 + q3 + 8)\gg 4`$
+  - $`p1 \leftarrow (p6 * 2 + p5 + p4 + p3 + p2 * 2 + p1 * 2 + p0 * 2 + q0 + q1 + q2 + q3 + q4 + 8)\gg 4`$
+  - $`p0 \leftarrow (p6 + p5 + p4 + p3 + p2 + p1 * 2 + p0 * 2 + q0 * 2 + q1 + q2 + q3 + q4 + q5 + 8)\gg 4`$
+  - $`q0 \leftarrow (p5 + p4 + p3 + p2 + p1 + p0 * 2 + q0 * 2 + q1 * 2 + q2 + q3 + q4 + q5 + q6 + 8)\gg 4`$
+  - $`q1 \leftarrow (p4 + p3 + p2 + p1 + p0 + q0 * 2 + q1 * 2 + q2 * 2 + q3 + q4 + q5 + q6 * 2 + 8)\gg 4`$
+  - $`q2 \leftarrow (p3 + p2 + p1 + p0 + q0 + q1 * 2 + q2 * 2 + q3 * 2 + q4 + q5 + q6 * 3 + 8)\gg 4`$
+  - $`q3 \leftarrow (p2 + p1 + p0 + q0 + q1 + q2 * 2 + q3 * 2 + q4 * 2 + q5 + q6 * 4 +8)\gg 4`$
+  - $`q4 \leftarrow (p1 + p0 + q0 + q1 + q2 + q3 * 2 + q4 * 2 + q5 * 2 + q6 * 5 + 8)\gg 4`$
+  - $`q5 \leftarrow (p0 + q0 + q1 + q2 + q3 + q4 * 2 + q5 * 2 + q6 * 7 + 8)\gg 4`$
 
 
 
-## 2.  Implementation
+## 2. Implementation
 
 **Inputs**: Block mode, transform size and reconstructed picture.
 
@@ -308,13 +302,13 @@ filter14)
 
 ##### Table 4. List of loop filter control flags.
 
-| **Flag**                | **Level** | **Description**                                                                                                                                                                                                                                                                                         |
-| ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| --enable-dlf                    | Configuration | Deblocking loop filter control (0:ON (Default), 1: OFF)   |
-| DlfCtrls      | Picture   | Describes the Dlf control signal.                                                                                                                                                                                                           |
-| combine\_vert\_horz\_lf | Picture   | When set, it implies performing filtering of vertical edges in the current SB followed by filtering of horizontal edges in the preceding SB in the same SB row. When OFF, it implies performing filtering of vertical edges in the current SB followed by filtering of horizontal edges in the same SB. |
+| **Flag**                | **Level**     | **Description**                                                                                                                                                                                                                                                                                         |
+| ----------------------- | ---------     | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --enable-dlf            | Configuration | Deblocking loop filter control (0:ON (Default), 1: OFF)                                                                                                                                                                                                                                                 |
+| DlfCtrls                | Picture       | Describes the Dlf control signal.                                                                                                                                                                                                                                                                       |
+| combine\_vert\_horz\_lf | Picture       | When set, it implies performing filtering of vertical edges in the current SB followed by filtering of horizontal edges in the preceding SB in the same SB row. When OFF, it implies performing filtering of vertical edges in the current SB followed by filtering of horizontal edges in the same SB. |
 
-![dlf_new_fig4](./img/dlf_new_fig4.png)
+![dlf_new_fig4](./img/dlf_new_fig4.svg)
 
 ##### Figure 4. High-level encoder process dataflow with DLF feature.
 
@@ -419,7 +413,7 @@ The function calls that start at ```svt_av1_loop_filter_frame``` are
 indicated in Figure 5 below according to the depth of the function
 call.
 
-![dlf_fig4](./img/dlf_fig4.png)
+![dlf_fig4](./img/dlf_fig4.svg)
 
 ##### Figure 5. Function calls starting at eb\_av1\_loop\_filter\_frame.
 
@@ -475,15 +469,15 @@ indicated in the Table above.
 
       - Apply the selected filter to the four samples along the vertical edge.
 
-3.  Return the frame filtering sse for the loop filter level and the
-    picture data plane being considered.
+3. Return the frame filtering sse for the loop filter level and the
+   picture data plane being considered.
 
 <!-- end list -->
 
-## 3.  Optimization of the algorithm
+## 3. Optimization of the algorithm
 
 The algorithmic optimization of the loop filter is performed by considering different loop filter search methods. If LPF_PICK_FROM_Q is chosen as the search
-method, the filter levels are determined using the picture qindex, however is LPF_PICK_FROM_FULL_IMAGE is selected, a binary search is performed to find the
+method, the filter levels are determined using the picture qindex; however if LPF_PICK_FROM_FULL_IMAGE is selected, a binary search is performed to find the
 best filter levels. Table 5 shows the DLF control signals and their descriptions. The encoder mode and the picture being used as a reference are used to
 determine the search method.
 
@@ -493,8 +487,12 @@ determine the search method.
 | --- | --- |
 | enabled | 0/1: Enable/Disable DLF |
 | sb_based_dlf | 0: perform picture-based DLF with LPF_PICK_FROM_FULL_IMAGE search method 1: perform DLF per SB using LPF_PICK_FROM_Q method |
+| dlf_avg | Start search from average DLF instead of 0 |
+| dlf_avg_uv | Use average DLF as a starting point for qp based filter strength selection for Chroma planes |
+| early_exit_convergence | Number of convergence points before exiting the filter search, 1 = exit on first convergence point, 2 = exit on second, 0 = off |
+| zero_filter_strength_lvl | Threshold used when sb_based_dlf is used to use filter strength zero, there are four levels of thresholds [0..3], 0 = off |
 
-## 4.  Signaling
+## 4. Signaling
 
 The loop filter parameters are signaled at the frame level and include
 the following parameters: ```filter_level[0]```, ```filter_level[1]```,
@@ -513,7 +511,11 @@ seen in Table 6.
 
 ## Notes
 
-The feature settings that are described in this document were compiled at v0.9.0 of the code and may not reflect the current status of the code. The description in this document represents an example showing  how features would interact with the SVT architecture. For the most up-to-date settings, it's recommended to review the section of the code implementing this feature.
+The feature settings that are described in this document were compiled at
+v2.2.0 of the code and may not reflect the current status of the code. The
+description in this document represents an example showing how features would
+interact with the SVT architecture. For the most up-to-date settings, it's
+recommended to review the section of the code implementing this feature.
 
 ## References
 
@@ -523,4 +525,4 @@ for AV1 CODEC,” International Conference on Image Processing, pp.
 925-929, 2017.
 
 \[2\] Jingning Han, Bohan Li, Debargha Mukherjee, Ching-Han Chiang, Adrian Grange, Cheng Chen, Hui Su, Sarah Parker, Sai Deng, Urvang Joshi, Yue Chen,
-Yunqing Wang, Paul Wilkins, Yaowu Xu, James  Bankoski, “A Technical Overview of AV1,” Proceedings of the IEEE, vol. 109, no. 9, pp. 1435-1462, Sept. 2021.
+Yunqing Wang, Paul Wilkins, Yaowu Xu, James Bankoski, “A Technical Overview of AV1,” Proceedings of the IEEE, vol. 109, no. 9, pp. 1435-1462, Sept. 2021.

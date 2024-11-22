@@ -28,16 +28,8 @@
 #include <new>
 #include "gtest/gtest.h"
 
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
-#include "EbDefinitions.h"
-#include "EbTransforms.h"
+#include "definitions.h"
+#include "transforms.h"
 
 #include "random.h"
 #include "TxfmRef.h"
@@ -113,7 +105,7 @@ class AV1FwdTxfm1dTest : public ::testing::TestWithParam<FwdTxfm1dParam> {
             }
 
             // calculate in forward transform functions
-            fwd_txfm_type_to_func(txfm_type_)(
+            svt_aom_fwd_txfm_type_to_func(txfm_type_)(
                 input_test_, output_test_, cos_bit, test_txfm_range);
             // calculate in reference forward transform functions
             reference_txfm_1d(get_txfm1d_types(txfm_type_),
@@ -145,7 +137,7 @@ TEST_P(AV1FwdTxfm1dTest, run_fwd_accuracy_check) {
     run_fwd_accuracy_check();
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     TX, AV1FwdTxfm1dTest,
     ::testing::Values(
         FwdTxfm1dParam(TXFM_TYPE_DCT4, 7), FwdTxfm1dParam(TXFM_TYPE_DCT8, 7),

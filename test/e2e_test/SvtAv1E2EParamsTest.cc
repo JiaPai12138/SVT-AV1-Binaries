@@ -95,15 +95,6 @@ static const std::vector<EncTestSetting> default_enc_settings = {
 
     // test rc mode {2, 3}, with {1Mbps, 0.75Mbps, 0.5Mbps} setting with
     // 480p
-    {"RcTest1",
-     {{"RateControlMode", "2"}, {"TargetBitRate", "1000000"}},
-     default_test_vectors},
-    {"RcTest2",
-     {{"RateControlMode", "2"}, {"TargetBitRate", "750000"}},
-     res_480p_test_vectors},
-    {"RcTest3",
-     {{"RateControlMode", "2"}, {"TargetBitRate", "500000"}},
-     res_480p_test_vectors},
     {"RcTest4",
      {{"RateControlMode", "1"}, {"TargetBitRate", "1000000"}},
      res_480p_test_vectors},
@@ -115,15 +106,6 @@ static const std::vector<EncTestSetting> default_enc_settings = {
      res_480p_test_vectors},
 
     // test high bitrate with big min_qp, or low bitrate with small max_qp
-    {"RcQpTest1",
-     {{"RateControlMode", "2"}, {"TargetBitRate", "1000000"}, {"MinQpAllowed", "20"}},
-     res_480p_test_vectors},
-    {"RcQpTest2",
-     {{"RateControlMode", "2"}, {"TargetBitRate", "500000"}, {"MaxQpAllowed", "50"}},
-     res_480p_test_vectors},
-    {"RcQpTest3",
-     {{"RateControlMode", "2"}, {"TargetBitRate", "750000"}, {"MaxQpAllowed", "50"}, {"MinQpAllowed", "20"}},
-     res_480p_test_vectors},
     {"RcQpTest4",
      {{"RateControlMode", "1"}, {"TargetBitRate", "1000000"}, {"MinQpAllowed", "20"}},
      res_480p_test_vectors},
@@ -188,20 +170,9 @@ class CodingOptionTest : public SvtAv1E2ETestFramework {
         EXPECT_GE(config->max_qp_allowed, actual_max_qp)
             << "Max qp allowd " << config->max_qp_allowed << " actual "
             << actual_max_qp;
-        if (config->rate_control_mode == 0) {
+        if (config->rate_control_mode == SVT_AV1_RC_MODE_CQP_OR_CRF) {
             EXPECT_EQ(actual_min_qp, actual_max_qp)
                 << "QP fluctuate in const qp mode";
-        }
-
-        // verify the bitrate
-        if (config->rate_control_mode == 3) {
-            uint32_t avg_bit_rate = (config->frame_rate_numerator /
-                                      config->frame_rate_denominator) *
-                                     stream_info->frame_bit_rate;
-            printf("%d--%d\n", config->target_bit_rate, avg_bit_rate);
-            EXPECT_GE(config->target_bit_rate, avg_bit_rate)
-                << "target bit-rate is less than actual: "
-                << config->target_bit_rate << "--" << avg_bit_rate;
         }
 
         // verify tile row and tile column
@@ -228,6 +199,6 @@ TEST_P(CodingOptionTest, CheckEncOptionsUsingBitstream) {
     run_death_test();
 }
 
-INSTANTIATE_TEST_CASE_P(SvtAv1, CodingOptionTest,
-                        ::testing::ValuesIn(default_enc_settings),
-                        EncTestSetting::GetSettingName);
+INSTANTIATE_TEST_SUITE_P(SvtAv1, CodingOptionTest,
+                         ::testing::ValuesIn(default_enc_settings),
+                         EncTestSetting::GetSettingName);

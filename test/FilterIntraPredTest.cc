@@ -21,30 +21,28 @@
  *
  ******************************************************************************/
 #include "gtest/gtest.h"
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
 #include "aom_dsp_rtcd.h"
 #include "random.h"
 #include "util.h"
-#include "EbUtility.h"
+#include "utility.h"
 
 using std::tuple;
 using svt_av1_test_tool::SVTRandom;  // to generate the random
 
 namespace {
-using PredParams = tuple<FilterIntraMode, TxSize>;
+
+typedef void (*FilterIntraPredictorFunc)(uint8_t* dst, ptrdiff_t stride,
+                                         TxSize tx_size, const uint8_t* above,
+                                         const uint8_t* left, int mode);
+
+using PredParams = tuple<FilterIntraMode, TxSize, FilterIntraPredictorFunc>;
 
 class FilterIntraPredTest : public ::testing::TestWithParam<PredParams> {
   public:
     FilterIntraPredTest()
         : pred_mode_(TEST_GET_PARAM(0)),
           tx_size_(TEST_GET_PARAM(1)),
+          test_func_(TEST_GET_PARAM(2)),
           rnd_(8, false) {
         input_ = reinterpret_cast<uint8_t*>(
             svt_aom_memalign(32, 2 * MAX_TX_SIZE + 1));
@@ -69,7 +67,7 @@ class FilterIntraPredTest : public ::testing::TestWithParam<PredParams> {
             prepare_data();
             svt_av1_filter_intra_predictor_c(
                 pred_ref_, stride, tx_size_, &above[1], left, pred_mode_);
-            svt_av1_filter_intra_predictor_sse4_1(
+            test_func_(
                 pred_tst_, stride, tx_size_, &above[1], left, pred_mode_);
             check_output(i);
         }
@@ -94,6 +92,7 @@ class FilterIntraPredTest : public ::testing::TestWithParam<PredParams> {
   protected:
     const FilterIntraMode pred_mode_;
     const TxSize tx_size_;
+    FilterIntraPredictorFunc test_func_;
     uint8_t* input_;
     uint8_t* pred_tst_;
     uint8_t* pred_ref_;
@@ -125,7 +124,20 @@ const TxSize TX_SIZE_TABLE[] = {TX_4X4,
                                 TX_8X32,
                                 TX_32X8};
 
-INSTANTIATE_TEST_CASE_P(AV1, FilterIntraPredTest,
-                        ::testing::Combine(::testing::ValuesIn(PRED_MODE_TABLE),
-                                           ::testing::ValuesIn(TX_SIZE_TABLE)));
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
+    SSE4_1, FilterIntraPredTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(PRED_MODE_TABLE),
+        ::testing::ValuesIn(TX_SIZE_TABLE),
+        ::testing::Values(svt_av1_filter_intra_predictor_sse4_1)));
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    NEON, FilterIntraPredTest,
+    ::testing::Combine(::testing::ValuesIn(PRED_MODE_TABLE),
+                       ::testing::ValuesIn(TX_SIZE_TABLE),
+                       ::testing::Values(svt_av1_filter_intra_predictor_neon)));
+#endif  // ARCH_AARCH64
 }  // namespace

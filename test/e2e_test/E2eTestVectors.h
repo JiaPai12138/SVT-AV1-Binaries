@@ -24,7 +24,7 @@
 
 #include <map>
 #include "VideoSource.h"
-#include "EbDefinitions.h"
+#include "definitions.h"
 #include "ConfigEncoder.h"
 
 /** @defgroup svt_av1_e2e_test_vector Test vectors for E2E test
@@ -60,6 +60,13 @@ const std::vector<TestVideoVector> default_test_vectors = {
                     480, 8, 0, 0, 60),
     std::make_tuple("niklas_640_480_30.yuv", YUV_VIDEO_FILE, IMG_FMT_420, 640,
                     480, 8, 0, 0, 60),
+};
+
+const std::vector<TestVideoVector> default_long_test_vectors = {
+    std::make_tuple("kirland_640_480_30.yuv", YUV_VIDEO_FILE, IMG_FMT_420, 640,
+                    480, 8, 0, 0, 1000),
+    std::make_tuple("niklas_640_480_30.yuv", YUV_VIDEO_FILE, IMG_FMT_420, 640,
+                    480, 8, 0, 0, 1000),
 };
 
 const std::vector<TestVideoVector> incomplete_sb_test_vectors = {
@@ -106,11 +113,40 @@ const std::vector<TestVideoVector> dummy_444_test_vectors = {
                     8, 0, 0, 100),
 };
 
+const std::vector<TestVideoVector> segment_test_vectors = {
+    std::make_tuple("niklas_1280_720_30.y4m", Y4M_VIDEO_FILE, IMG_FMT_420, 1280,
+                    720, 8, 0, 0, 0),
+};
+
+typedef std::tuple<std::string,              /**< event name */
+                   uint32_t,                 /**< frame number */
+                   PrivDataType,             /**< event type */
+                   std::vector<std::string>> /**< parameters vector */
+    TestFrameEvent;
+
 using EncSetting = std::map<std::string, std::string>;
 typedef struct EncTestSetting {
     std::string name;    // description of the test cases
     EncSetting setting;  // pairs of encoder setting, {name, value};
     std::vector<TestVideoVector> test_vectors;
+    std::vector<TestFrameEvent> event_vector;
+
+    EncTestSetting(std::string name_str, EncSetting settings,
+                   std::vector<TestVideoVector> videos) {
+        name = name_str;
+        setting = settings;
+        test_vectors = videos;
+    }
+
+    EncTestSetting(std::string name_str, EncSetting settings,
+                   std::vector<TestVideoVector> videos,
+                   std::vector<TestFrameEvent> events) {
+        name = name_str;
+        setting = settings;
+        test_vectors = videos;
+        event_vector = events;
+    }
+
     std::string to_string(std::string& fn) const {
         std::string str = get_setting_str();
         str += "test vector: ";
@@ -194,7 +230,7 @@ typedef struct EncTestSetting {
                                     const EncTestSetting& setting) {
         return os << setting.get_setting_str();
     }
-    // used in INSTANTIATE_TEST_CASE_P to append the param info into the test
+    // used in INSTANTIATE_TEST_SUITE_P to append the param info into the test
     // name
     static std::string GetSettingName(
         const ::testing::TestParamInfo<EncTestSetting> setting) {

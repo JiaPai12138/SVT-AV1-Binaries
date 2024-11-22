@@ -23,24 +23,17 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+
 #include "gtest/gtest.h"
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
-#include "EbDefinitions.h"
+#include "definitions.h"
 #include "aom_dsp_rtcd.h"
 #include "random.h"
 #include "util.h"
-#include "EbUtility.h"
-#include "EbDeblockingFilter.h"
+#include "utility.h"
+#include "deblocking_filter.h"
 #include "acm_random.h"
-#include "EbDeblockingFilter_SSE2.h"
-#include "EbDeblockingCommon.h"
+#include "dlf_sse2.h"
+#include "deblocking_common.h"
 
 using libaom_test::ACMRandom;
 using ::testing::make_tuple;
@@ -228,11 +221,13 @@ class HbdLoopFilterTest
         lpf_ref_(start_ref_, p, blimit, limit, thresh, bd);
     }
 };
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(HbdLoopFilterTest);
 
 TEST_P(HbdLoopFilterTest, MatchTestRandomData) {
     run_test();
 }
 
+#ifdef ARCH_X86_64
 // target and reference functions in different cases
 /* clang-format off */
 const HbdLpfTestParam kHbdLoop8Test6[] = {
@@ -302,8 +297,26 @@ const LdbLpfTestParam kLoop8Test6[] = {
 };
 /* clang-format on */
 
-INSTANTIATE_TEST_CASE_P(SSE2, LbdLoopFilterTest,
-                        ::testing::ValuesIn(kLoop8Test6));
-INSTANTIATE_TEST_CASE_P(SSE2, HbdLoopFilterTest,
-                        ::testing::ValuesIn(kHbdLoop8Test6));
+INSTANTIATE_TEST_SUITE_P(SSE2, LbdLoopFilterTest,
+                         ::testing::ValuesIn(kLoop8Test6));
+INSTANTIATE_TEST_SUITE_P(SSE2, HbdLoopFilterTest,
+                         ::testing::ValuesIn(kHbdLoop8Test6));
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+const LdbLpfTestParam kLoop8Test6[] = {
+    make_tuple(&svt_aom_lpf_horizontal_4_neon, &svt_aom_lpf_horizontal_4_c, 8),
+    make_tuple(&svt_aom_lpf_vertical_4_neon, &svt_aom_lpf_vertical_4_c, 8),
+    make_tuple(&svt_aom_lpf_horizontal_6_neon, &svt_aom_lpf_horizontal_6_c, 8),
+    make_tuple(&svt_aom_lpf_vertical_6_neon, &svt_aom_lpf_vertical_6_c, 8),
+    make_tuple(&svt_aom_lpf_horizontal_8_neon, &svt_aom_lpf_horizontal_8_c, 8),
+    make_tuple(&svt_aom_lpf_vertical_8_neon, &svt_aom_lpf_vertical_8_c, 8),
+    make_tuple(&svt_aom_lpf_horizontal_14_neon, &svt_aom_lpf_horizontal_14_c,
+               8),
+    make_tuple(&svt_aom_lpf_vertical_14_neon, &svt_aom_lpf_vertical_14_c, 8),
+};
+
+INSTANTIATE_TEST_SUITE_P(NEON, LbdLoopFilterTest,
+                         ::testing::ValuesIn(kLoop8Test6));
+#endif  // ARCH_AARCH64
 }  // namespace

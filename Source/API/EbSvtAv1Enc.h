@@ -21,6 +21,15 @@ extern "C" {
 #include <stdlib.h>
 #include <stdio.h>
 
+/**
+ * @brief SVT-AV1 encoder ABI version
+ *
+ * Should be increased by 1 everytime a public struct in the encoder
+ * has been modified, and reset anytime the major API version has
+ * been changed. Used to keep track if a field has been added or not.
+ */
+#define SVT_AV1_ENC_ABI_VERSION 0
+
 //***HME***
 
 #define MAX_HIERARCHICAL_LEVEL 6
@@ -34,7 +43,6 @@ extern "C" {
 #endif
 #endif /* ATTRIBUTE_PACKED */
 typedef enum ATTRIBUTE_PACKED {
-    ENC_MRS        = -2, // Highest quality research mode (slowest)
     ENC_MR         = -1, //Research mode with higher quality than M0
     ENC_M0         = 0,
     ENC_M1         = 1,
@@ -56,8 +64,7 @@ typedef enum ATTRIBUTE_PACKED {
 #define DEFAULT -1
 
 #define EB_BUFFERFLAG_EOS 0x00000001 // signals the last packet of the stream
-#define EB_BUFFERFLAG_SHOW_EXT \
-    0x00000002 // signals that the packet contains a show existing frame at the end
+#define EB_BUFFERFLAG_SHOW_EXT 0x00000002 // signals that the packet contains a show existing frame at the end
 #define EB_BUFFERFLAG_HAS_TD 0x00000004 // signals that the packet contains a TD
 #define EB_BUFFERFLAG_IS_ALT_REF 0x00000008 // signals that the packet contains an ALT_REF frame
 #define EB_BUFFERFLAG_ERROR_MASK \
@@ -104,8 +111,6 @@ struct EbSvtAv1MasteringDisplayInfo {
 typedef struct PredictionStructureConfigEntry {
     uint32_t temporal_layer_index;
     uint32_t decode_order;
-    int32_t  ref_list0[REF_LIST_MAX_DEPTH];
-    int32_t  ref_list1[REF_LIST_MAX_DEPTH];
 } PredictionStructureConfigEntry;
 
 // super-res modes
@@ -125,6 +130,16 @@ typedef enum {
     SUPERRES_AUTO_SOLO, // Only apply the q-based superres ratio
     SUPERRES_AUTO_SEARCH_TYPES
 } SUPERRES_AUTO_SEARCH_TYPE;
+
+// reference scaling modes
+typedef enum {
+    RESIZE_NONE, // No frame resize allowed.
+    RESIZE_FIXED, // All frames are coded at the specified scale.
+    RESIZE_RANDOM, // All frames are coded at a random scale.
+    RESIZE_DYNAMIC, // Resize scale for a frame in dynamic.
+    RESIZE_RANDOM_ACCESS, // Resize scale frame by event in random access
+    RESIZE_MODES
+} RESIZE_MODE;
 
 /** The SvtAv1IntraRefreshType is used to describe the intra refresh type.
 */
@@ -158,11 +173,48 @@ typedef enum EbSFrameMode {
         2, /**< If the considered frame is not an altref frame, the next base layer inter frame will be made into an S-Frame */
 } EbSFrameMode;
 
+/* Indicates what prediction structure to use
+ * was PredStructure in definitions.h
+ * Only SVT_AV1_PRED_LOW_DELAY_B and SVT_AV1_PRED_RANDOM_ACCESS are valid
+ */
+typedef enum SvtAv1PredStructure {
+    SVT_AV1_PRED_LOW_DELAY_P   = 0, // No longer active
+    SVT_AV1_PRED_LOW_DELAY_B   = 1,
+    SVT_AV1_PRED_RANDOM_ACCESS = 2,
+    SVT_AV1_PRED_TOTAL_COUNT   = 3,
+    SVT_AV1_PRED_INVALID       = 0xFF,
+} SvtAv1PredStructure;
+
+/* Indicates what rate control mode is used.
+ * Currently, cqp is distinguised by setting enable_adaptive_quantization to 0
+ */
+typedef enum SvtAv1RcMode {
+    SVT_AV1_RC_MODE_CQP_OR_CRF = 0, // constant quantization parameter/constant rate factor
+    SVT_AV1_RC_MODE_VBR        = 1, // variable bit rate
+    SVT_AV1_RC_MODE_CBR        = 2, // constant bit rate
+} SvtAv1RcMode;
+
+typedef enum SvtAv1FrameUpdateType {
+    SVT_AV1_KF_UPDATE,
+    SVT_AV1_LF_UPDATE,
+    SVT_AV1_GF_UPDATE,
+    SVT_AV1_ARF_UPDATE,
+    SVT_AV1_OVERLAY_UPDATE,
+    SVT_AV1_INTNL_OVERLAY_UPDATE, // Internal Overlay Frame
+    SVT_AV1_INTNL_ARF_UPDATE, // Internal Altref Frame
+    SVT_AV1_FRAME_UPDATE_TYPES
+} SvtAv1FrameUpdateType;
+
+typedef struct SvtAv1FrameScaleEvts {
+    uint32_t  evt_num;
+    uint64_t *start_frame_nums;
+    uint32_t *resize_kf_denoms;
+    uint32_t *resize_denoms;
+} SvtAv1FrameScaleEvts;
+
 // Will contain the EbEncApi which will live in the EncHandle class
 // Only modifiable during config-time.
 typedef struct EbSvtAv1EncConfiguration {
-    // Encoding preset
-
     /**
      * @brief Encoder preset used.
      * -2 and -1 are for debug purposes and should not be used.
@@ -179,14 +231,17 @@ typedef struct EbSvtAv1EncConfiguration {
 
     /* The intra period defines the interval of frames after which you insert an
      * Intra refresh. It is strongly recommended to set the value to multiple of
-     * 8 minus 1 the closest to 1 second (e.g. 55, 47, 31, 23 should be used for
-     * 60, 50, 30, (24 or 25) respectively.
+     * 2^(hierarchical_levels), subtracting one if using open GOP (intra_refresh_type == 1).
+     * For instance, to get a 5-second GOP (default being >=5 seconds)
+     * with hierarchical_levels = 3 and open GOP you could use 319, 279, 159
+     * for 60, 50, or 30 respectively.
      *
      * -1 = no intra update.
      * -2 = auto.
      *
      * Default is -2. */
     int32_t intra_period_length;
+
     /* Random access.
      *
      * 1 = CRA, open GOP.
@@ -194,10 +249,11 @@ typedef struct EbSvtAv1EncConfiguration {
      *
      * Default is 1. */
     SvtAv1IntraRefreshType intra_refresh_type;
+
     /* Number of hierarchical layers used to construct GOP.
      * Minigop size = 2^HierarchicalLevels.
      *
-     * Default is 3. */
+     * Default is 5 upt to M12 4, for M13. */
     uint32_t hierarchical_levels;
 
     /* Prediction structure used to construct GOP. There are two main structures
@@ -215,7 +271,9 @@ typedef struct EbSvtAv1EncConfiguration {
      * In Random Access structure, the B/b pictures can refer to reference pictures
      * from both directions (past and future).
      *
-     * Default is 2. */
+     * Refer to SvtAv1PredStructure enum for valid values.
+     *
+     * Default is SVT_AV1_PRED_RANDOM_ACCESS. */
     uint8_t pred_structure;
 
     // Input Info
@@ -272,202 +330,13 @@ typedef struct EbSvtAv1EncConfiguration {
      * Default is YUV420.
      */
     EbColorFormat encoder_color_format;
-    /* Offline packing of the 2bits: requires two bits packed input.
-     *
-     * Default is 0. */
-    uint32_t compressed_ten_bit_format;
-
-    /* Instruct the library to calculate the recon to source for PSNR calculation
-    *
-    * Default is 0.*/
-    uint32_t stat_report;
-
-    // Quantization
-    /* Initial quantization parameter for the Intra pictures used under constant
-     * qp rate control mode.
-     *
-     * Default is 50. */
-    uint32_t qp;
-
-    /* force qp values for every picture that are passed in the header pointer
-    *
-    * Default is 0.*/
-    Bool use_qp_file;
-
-    /* use fixed qp offset for every picture based on temporal layer index
-    *
-    * Default is 0.*/
-    Bool    use_fixed_qindex_offsets;
-    int32_t qindex_offsets[EB_MAX_TEMPORAL_LAYERS];
-    int32_t key_frame_chroma_qindex_offset;
-    int32_t key_frame_qindex_offset;
-    int32_t chroma_qindex_offsets[EB_MAX_TEMPORAL_LAYERS];
-
-    int32_t luma_y_dc_qindex_offset;
-    int32_t chroma_u_dc_qindex_offset;
-    int32_t chroma_u_ac_qindex_offset;
-    int32_t chroma_v_dc_qindex_offset;
-    int32_t chroma_v_ac_qindex_offset;
-
-    // input / output buffer to be used for multi-pass encoding
-    SvtAv1FixedBuf rc_stats_buffer;
-    int            pass;
-
-    // Deblock Filter
 
     /**
-     * @brief Deblocking loop filter control
+     * @brief Currently unused.
      *
-     * Default is true.
+     * Default is 0.
      */
-    Bool enable_dlf_flag;
-
-    /* Film grain denoising the input picture
-    * Flag to enable the denoising
-    *
-    * Default is 0. */
-    uint32_t film_grain_denoise_strength;
-
-    /**
-    * @brief Determines how much denoising is used.
-    * Only applicable when film grain is ON.
-    *
-    * 0 is no denoising
-    * 1 is full denoising
-    */
-    uint8_t film_grain_denoise_apply;
-
-    /* CDEF Level
-    *
-    * Default is -1. */
-    int cdef_level;
-
-    /* Restoration filtering
-    *  enable/disable
-    *  set Self-Guided (sg) mode
-    *  set Wiener (wn) mode
-    *
-    * Default is -1. */
-    int enable_restoration_filtering;
-    /* motion field motion vector
-    *
-    *  Default is -1. */
-    int enable_mfmv;
-
-    // Rate Control
-    /* Rate control mode.
-     *
-     * 0 = Constant QP.
-     * 1 = Variable Bit Rate, achieve the target bitrate at entire stream.
-     * 2 = Constant Bit Rate, achieve the target bitrate
-     * Default is 0. */
-    uint32_t rate_control_mode;
-    /* Flag to enable the scene change detection algorithm.
-     *
-     * Default is 1. */
-    uint32_t scene_change_detection;
-
-    /* When RateControlMode is set to 1 it's best to set this parameter to be
-     * equal to the Intra period value (such is the default set by the encoder).
-     * When CQP is chosen, then a (2 * minigopsize +1) look ahead is recommended.
-     *
-     * Default depends on rate control mode.*/
-    uint32_t look_ahead_distance;
-
-    /* Enable TPL in look ahead
-     * 0 = disable TPL in look ahead
-     * 1 = enable TPL in look ahead
-     * Default is 0  */
-    uint8_t enable_tpl_la;
-
-    /* Target bitrate in bits/second, only apllicable when rate control mode is
-     * set to 2 or 3.
-     *
-     * Default is 7000000. */
-    uint32_t target_bit_rate;
-    /* maximum bitrate in bits/second, only apllicable when rate control mode is
-     * set to 0.
-     *
-     * Default is 0. */
-    uint32_t max_bit_rate;
-    /* VBV Buffer size */
-    uint32_t vbv_bufsize;
-    /* Maxium QP value allowed for rate control use, only applicable when rate
-     * control mode is set to 1. It has to be greater or equal to minQpAllowed.
-     *
-     * Default is 63. */
-    uint32_t max_qp_allowed;
-    /* Minimum QP value allowed for rate control use, only applicable when rate
-     * control mode is set to 1. It has to be smaller or equal to maxQpAllowed.
-     *
-     * Default is 0. */
-    uint32_t min_qp_allowed;
-
-    /* TWO PASS DATARATE CONTROL OPTIONS.
-     * Indicates the bias (expressed on a scale of 0 to 100) for determining
-     * target size for the current frame. The value 0 indicates the optimal CBR
-     * mode value should be used, and 100 indicates the optimal VBR mode value
-     * should be used. */
-    uint32_t vbr_bias_pct;
-    /* Indicates the minimum bitrate to be used for a single GOP as a percentage
-     * of the target bitrate. */
-    uint32_t vbr_min_section_pct;
-    /* Indicates the maximum bitrate to be used for a single GOP as a percentage
-     * of the target bitrate. */
-    uint32_t vbr_max_section_pct;
-    /* under_shoot_pct indicates the tolerance of the VBR algorithm to undershoot
-     * and is used as a trigger threshold for more agressive adaptation of Q. Its
-     * value can range from 0-100. */
-    uint32_t under_shoot_pct;
-    /* over_shoot_pct indicates the tolerance of the VBR algorithm to overshoot
-     * and is used as a trigger threshold for more agressive adaptation of Q. Its
-     * value can range from 0-1000. */
-    uint32_t over_shoot_pct;
-    /* over_shoot_pct indicates the tolerance of the Capped CRF algorithm to overshoot
-     * and is used as a trigger threshold for more agressive adaptation of Q. Its
-     * value can range from 0-1000. */
-    uint32_t mbr_over_shoot_pct;
-    /* Indicates the amount of data that will be buffered by the decoding
-     * application prior to beginning playback, and is expressed in units of
-     * time(milliseconds). */
-    int64_t starting_buffer_level_ms;
-    /* Indicates the amount of data that the encoder should try to maintain in the
-     * decoder's buffer, and is expressed in units of time(milliseconds). */
-    int64_t optimal_buffer_level_ms;
-    /* Indicates the maximum amount of data that may be buffered by the decoding
-     * application, and is expressed in units of time(milliseconds).*/
-    int64_t maximum_buffer_size_ms;
-
-    /* recode_loop indicates the recode levels,
-     * DISALLOW_RECODE = 0, No recode.
-     * ALLOW_RECODE_KFMAXBW = 1, Allow recode for KF and exceeding maximum frame bandwidth.
-     * ALLOW_RECODE_KFARFGF = 2, Allow recode only for KF/ARF/GF frames.
-     * ALLOW_RECODE = 3, Allow recode for all frames based on bitrate constraints.
-     * ALLOW_RECODE_DEFAULT = 4, Default setting, ALLOW_RECODE_KFARFGF for M0~5 and
-     *                                            ALLOW_RECODE_KFMAXBW for M6~8.
-     * default is 4
-     */
-    uint32_t recode_loop;
-
-    /* Flag to signal the content being a screen sharing content type
-    *
-    * Default is 0. */
-    uint32_t screen_content_mode;
-
-    /* Enable adaptive quantization within a frame using segmentation.
-     *
-     * For rate control mode 0, setting this to 0 will use CQP mode, else CRF mode will be used.
-     * Default is 2. */
-    uint8_t enable_adaptive_quantization;
-
-    // Tresholds
-
-    /**
-     * @brief Enable writing of HDR metadata in the bitstream
-     *
-     * Default is false.
-     */
-    Bool high_dynamic_range_input;
+    uint8_t high_dynamic_range_input;
 
     /**
      * @brief Bitstream profile to use.
@@ -498,125 +367,6 @@ typedef struct EbSvtAv1EncConfiguration {
      */
     uint32_t level;
 
-    /* CPU FLAGS to limit assembly instruction set used by encoder.
-    * Default is CPU_FLAGS_ALL. */
-    CPU_FLAGS use_cpu_flags;
-
-    // Application Specific parameters
-
-    /**
-     * @brief API signal for the library to know the channel ID (used for pinning to cores).
-     *
-     * Min value is 0.
-     * Max value is 0xFFFFFFFF.
-     * Default is 0.
-     */
-    uint32_t channel_id;
-
-    /**
-     * @brief API signal for the library to know the active number of channels being encoded simultaneously.
-     *
-     * Min value is 1.
-     * Max value is 0xFFFFFFFF.
-     * Default is 1.
-     */
-    uint32_t active_channel_count;
-
-    /**
-     * @brief API signal to constrain motion vectors.
-     *
-     * Default is false.
-     */
-    Bool restricted_motion_vector;
-
-    // Threads management
-
-    /* The number of logical processor which encoder threads run on. If
-     * LogicalProcessors and TargetSocket are not set, threads are managed by
-     * OS thread scheduler. */
-    uint32_t logical_processors;
-
-    /* Unpin the execution .This option does not
-    * set the execution to be pinned to a specific number of cores when set to 1. this allows the execution
-    * of multiple encodes on the CPU without having to pin them to a specific mask
-    * 1: pinned threads
-    * 0: unpinned
-    * default 0 */
-    uint32_t pin_threads;
-
-    /* Target socket to run on. For dual socket systems, this can specify which
-     * socket the encoder runs on.
-     *
-     * -1 = Both Sockets.
-     *  0 = Socket 0.
-     *  1 = Socket 1.
-     *
-     * Default is -1. */
-    int32_t target_socket;
-
-    // Debug tools
-
-    /**
-     * @brief API Signal to output reconstructed yuv used for debug purposes.
-     * Using this will affect the speed of encoder.
-     *
-     * Default is false.
-     */
-    Bool recon_enabled;
-
-    /* Log 2 Tile Rows and columns . 0 means no tiling,1 means that we split the dimension
-        * into 2
-        * Default is 0. */
-    int32_t tile_columns;
-    int32_t tile_rows;
-
-    /**
-     * @brief Enable use of ALT-REF (temporally filtered) frames.
-     *
-     * Default is true.
-     */
-    Bool enable_tf;
-
-    Bool enable_overlays;
-    /**
-     * @brief Tune for a particular metric; 0: VQ, 1: PSNR
-     *
-     * Default is 1.
-     */
-    uint8_t tune;
-    // super-resolution parameters
-    uint8_t superres_mode;
-    uint8_t superres_denom;
-    uint8_t superres_kf_denom;
-    uint8_t superres_qthres;
-    uint8_t superres_kf_qthres;
-    uint8_t superres_auto_search_type;
-
-    /**
-     * @brief API signal containing the manual prediction structure parameters.
-     * Only used when enable_manual_pred_struct is enabled. This list is copied
-     * into internal buffers after svt_av1_enc_set_parameter().
-     */
-    PredictionStructureConfigEntry pred_struct[1 << (MAX_HIERARCHICAL_LEVEL - 1)];
-
-    /**
-     * @brief API signal to overwrite the encoder's default prediction structure.
-     *
-     * Default is false.
-     */
-    Bool enable_manual_pred_struct;
-
-    /**
-     * @brief API signal specifying the size (number of entries) of the manual prediction structure buffer.
-     * Only checked and used when enable_manual_pred_struct is enabled.
-     *
-     * Min is 1.
-     * Max is 32.
-     * Default is 0.
-     */
-    int32_t manual_pred_struct_entry_num;
-
-    // Color description
     /* Color description present flag
     *
     * It is not necessary to set this parameter manually.
@@ -652,12 +402,349 @@ typedef struct EbSvtAv1EncConfiguration {
     */
     struct EbContentLightLevel content_light_level;
 
-    /* Decoder-speed-targeted encoder optimization level (produce bitstreams that can be decoded faster).
-    * 0: No decoder speed optimization
-    * 1: Decoder speed optimization enabled (fast decode)
-    */
-    Bool fast_decode;
+    /* Chroma sample position
+     * Values as per 6.4.2 of the specification:
+     * EB_CSP_UNKNOWN:   default
+     * EB_CSP_VERTICAL:  value 0 from H.273 AKA "left"
+     * EB_CSP_COLOCATED: value 2 from H.273 AKA "top left"
+     */
+    EbChromaSamplePosition chroma_sample_position;
 
+    // End input info
+
+    /* Rate control mode.
+     *
+     * Refer to the SvtAv1RcMode enum for valid values
+     * Default is 0. */
+    uint32_t rate_control_mode;
+
+    // Rate control tuning
+
+    // Quantization
+    /* Initial quantization parameter for the Intra pictures used under constant
+     * qp rate control mode.
+     *
+     * Default is 50. */
+    uint32_t qp;
+
+    /* force qp values for every picture that are passed in the header pointer
+    *
+    * Default is 0.*/
+    Bool use_qp_file;
+
+    /* Target bitrate in bits/second, only applicable when rate control mode is
+     * set to 1 (VBR) or 2 (CBR).
+     *
+     * Default is 2000513. */
+    uint32_t target_bit_rate;
+    /* maximum bitrate in bits/second, only apllicable when rate control mode is
+     * set to 0.
+     *
+     * Default is 0. */
+    uint32_t max_bit_rate;
+
+#if !SVT_AV1_CHECK_VERSION(1, 5, 0)
+    /* DEPRECATED: to be removed in 1.5.0. */
+    uint32_t vbv_bufsize;
+#endif
+
+    /* Maxium QP value allowed for rate control use, only applicable when rate
+     * control mode is set to 1. It has to be greater or equal to minQpAllowed.
+     *
+     * Default is 63. */
+    uint32_t max_qp_allowed;
+    /* Minimum QP value allowed for rate control use, only applicable when rate
+     * control mode is set to 1 or 2. It has to be smaller or equal to maxQpAllowed.
+     *
+     * Default is 4. */
+    uint32_t min_qp_allowed;
+
+    // DATARATE CONTROL OPTIONS
+#if !SVT_AV1_CHECK_VERSION(2, 0, 0)
+    /* DEPRECATED: to be removed in 2.0.0. */
+    /**
+     * @brief Variable Bit Rate Bias Percentage
+     *
+     * Indicates the bias for determining target size for the current frame.
+     * A value 0 indicates the optimal CBR mode value should be used, and 100
+     * indicates the optimal VBR mode value should be used.
+     *
+     * Min is 0.
+     * Max is 100.
+     * Default is 100
+     */
+    uint32_t vbr_bias_pct;
+#endif
+
+    /**
+     * @brief Variable Bit Rate Minimum Section Percentage
+     *
+     * Indicates the minimum bitrate to be used for a single GOP as a percentage
+     * of the target bitrate.
+     *
+     * Min is 0.
+     * Max is 100.
+     * Default is 0.
+     */
+    uint32_t vbr_min_section_pct;
+
+    /**
+     * @brief Variable Bit Rate Maximum Section Percentage
+     *
+     * Indicates the maximum bitrate to be used for a single GOP as a percentage
+     * of the target bitrate.
+     *
+     * Min is 0.
+     * Max is 10000.
+     * Default is 2000.
+     */
+    uint32_t vbr_max_section_pct;
+
+    /**
+     * @brief UnderShoot Percentage
+     *
+     * Only applicable for VBR and CBR.
+     *
+     * Indicates the tolerance of the VBR algorithm to undershoot and is used
+     * as a trigger threshold for more agressive adaptation of Quantization.
+     *
+     * Min is 0.
+     * Max is 100.
+     * Default is 25 for CBR and 50 for VBR.
+     */
+    uint32_t under_shoot_pct;
+
+    /**
+     * @brief OverShoot Percentage
+     *
+     * Only applicable for VBR and CBR
+     *
+     * Indicates the tolerance of the VBR algorithm to overshoot and is used as
+     * a trigger threshold for more agressive adaptation of Quantization.
+     *
+     * Min is 0.
+     * Max is 100.
+     * Default is 25.
+     */
+    uint32_t over_shoot_pct;
+
+    /**
+     * @brief MaxBitRate OverShoot Percentage
+     *
+     * Only applicable for Capped CRF.
+     *
+     * Indicates the tolerance of the Capped CRF algorithm to overshoot
+     * and is used as a trigger threshold for more agressive adaptation of
+     * Quantization.
+     *
+     * Min is 0.
+     * Max is 100.
+     * Default is 50.
+     */
+    uint32_t mbr_over_shoot_pct;
+
+    /**
+     * @brief Starting Buffer Level in MilliSeconds
+     *
+     * Only applicable for CBR.
+     *
+     * Indicates the amount of data that will be buffered by the decoding
+     * application prior to beginning playback, and is expressed in units of
+     * time. Must be less than maximum_buffer_size_ms.
+     *
+     * Min is 20.
+     * Max is 10000.
+     * Default is 600.
+     */
+    int64_t starting_buffer_level_ms;
+
+    /**
+     * @brief Optimal Buffer Level in MilliSeconds
+     *
+     * Only applicable for CBR.
+     *
+     * indicates the amount of data that the encoder should try to maintain in the
+     * decoder's buffer, and is expressed in units of time. Must be less than
+     * maximum_buffer_size_ms.
+     *
+     * Min is 20.
+     * Max is 10000.
+     * Default is 600.
+     */
+    int64_t optimal_buffer_level_ms;
+
+    /**
+     * @brief Maximum Buffer Size in MilliSeconds
+     *
+     * Only applicable for CBR.
+     *
+     * indicates the maximum amount of data that may be buffered by the
+     * decoding application, and is expressed in units of time.
+     *
+     * Min is 20.
+     * Max is 10000.
+     * Default is 1000.
+     */
+    int64_t maximum_buffer_size_ms;
+
+    // input / output buffer to be used for multi-pass encoding
+    SvtAv1FixedBuf rc_stats_buffer;
+    int            pass;
+
+    // End rate control tuning
+
+    // Individual tuning flags
+    /* use fixed qp offset for every picture based on temporal layer index
+    * 0: off (use the auto mode QP)
+    * 1: on (the offset is applied on top of the user QP)
+    * 2: on (the offset is applied on top of the auto mode QP)
+    *
+    * Default is 0.*/
+    uint8_t use_fixed_qindex_offsets;
+    int32_t qindex_offsets[EB_MAX_TEMPORAL_LAYERS];
+    int32_t key_frame_chroma_qindex_offset;
+    int32_t key_frame_qindex_offset;
+    int32_t chroma_qindex_offsets[EB_MAX_TEMPORAL_LAYERS];
+
+    int32_t luma_y_dc_qindex_offset;
+    int32_t chroma_u_dc_qindex_offset;
+    int32_t chroma_u_ac_qindex_offset;
+    int32_t chroma_v_dc_qindex_offset;
+    int32_t chroma_v_ac_qindex_offset;
+
+    /**
+     * @brief Deblocking loop filter control
+     *
+     * Default is true.
+     */
+    Bool enable_dlf_flag;
+
+    /* Film grain denoising the input picture
+    * Flag to enable the denoising
+    *
+    * Default is 0. */
+    uint32_t film_grain_denoise_strength;
+
+    /**
+    * @brief Determines how much denoising is used.
+    * Only applicable when film grain is ON.
+    *
+    * 0 is no denoising
+    * 1 is full denoising
+    *
+    * Default is 0. */
+    uint8_t film_grain_denoise_apply;
+
+    /* CDEF Level
+    *
+    * Default is -1. */
+    int cdef_level;
+
+    /* Restoration filtering
+    *  enable/disable
+    *  set Self-Guided (sg) mode
+    *  set Wiener (wn) mode
+    *
+    * Default is -1. */
+    int enable_restoration_filtering;
+
+    /* motion field motion vector
+    *
+    *  Default is -1. */
+    int enable_mfmv;
+
+    /* Flag to enable the scene change detection algorithm.
+     *
+     * Default is 1. */
+    uint32_t scene_change_detection;
+
+    /**
+     * @brief API signal to constrain motion vectors.
+     *
+     * Default is false.
+     */
+    Bool restricted_motion_vector;
+
+    /* Log 2 Tile Rows and columns . 0 means no tiling,1 means that we split the dimension
+        * into 2
+        * Default is 0. */
+    int32_t tile_columns;
+    int32_t tile_rows;
+
+    /* When RateControlMode is set to 1 it's best to set this parameter to be
+     * equal to the Intra period value (such is the default set by the encoder).
+     * When CQP is chosen, then a (2 * minigopsize +1) look ahead is recommended.
+     *
+     * Default depends on rate control mode.*/
+    uint32_t look_ahead_distance;
+
+    /* Enable TPL in look ahead
+     * 0 = disable TPL in look ahead
+     * 1 = enable TPL in look ahead
+     * Default is 0  */
+    uint8_t enable_tpl_la;
+
+    /* recode_loop indicates the recode levels,
+     * DISALLOW_RECODE = 0, No recode.
+     * ALLOW_RECODE_KFMAXBW = 1, Allow recode for KF and exceeding maximum frame bandwidth.
+     * ALLOW_RECODE_KFARFGF = 2, Allow recode only for KF/ARF/GF frames.
+     * ALLOW_RECODE = 3, Allow recode for all frames based on bitrate constraints.
+     * ALLOW_RECODE_DEFAULT = 4, Default setting, ALLOW_RECODE_KFARFGF for M0~5 and
+     *                                            ALLOW_RECODE_KFMAXBW for M6~8.
+     * default is 4
+     */
+    uint32_t recode_loop;
+
+    /* Flag to signal the content being a screen sharing content type
+    *
+    * Default is 0. */
+    uint32_t screen_content_mode;
+
+    /* Enable adaptive quantization within a frame using segmentation.
+     *
+     * For rate control mode 0, setting this to 0 will use CQP mode, else CRF mode will be used.
+     * Default is 2. */
+    uint8_t enable_adaptive_quantization;
+
+    /**
+     * @brief Enable use of ALT-REF (temporally filtered) frames.
+     *
+     * Default is true.
+     */
+    Bool enable_tf;
+
+    Bool enable_overlays;
+    /**
+     * @brief Tune for a particular metric; 0: VQ, 1: PSNR, 2: SSIM.
+     *
+     * Default is 1.
+     */
+    uint8_t tune;
+
+    // super-resolution parameters
+    uint8_t superres_mode;
+    uint8_t superres_denom;
+    uint8_t superres_kf_denom;
+    uint8_t superres_qthres;
+    uint8_t superres_kf_qthres;
+    uint8_t superres_auto_search_type;
+
+#if !SVT_AV1_CHECK_VERSION(1, 5, 0)
+    /* DEPRECATED: to be removed in 1.5.0. */
+    PredictionStructureConfigEntry pred_struct[1 << (MAX_HIERARCHICAL_LEVEL - 1)];
+
+    /* DEPRECATED: to be removed in 1.5.0. */
+    Bool enable_manual_pred_struct;
+
+    /* DEPRECATED: to be removed in 1.5.0. */
+    int32_t manual_pred_struct_entry_num;
+#endif
+    /* Decoder-speed-targeted encoder optimization level (produce bitstreams that can be decoded faster).
+    * 0: No decoder-targeted speed optimization
+    * 1: Level 1 of decoder-targeted speed optimizations (faster decoder-speed than level 0)
+    * 2: Level 2 of decoder-targeted speed optimizations (faster decoder-speed than level 1)
+    */
+    uint8_t fast_decode;
     /* S-Frame interval (frames)
     * 0: S-Frame off
     * >0: S-Frame on and indicates the number of frames after which a frame may be coded as an S-Frame
@@ -670,13 +757,236 @@ typedef struct EbSvtAv1EncConfiguration {
     */
     EbSFrameMode sframe_mode;
 
-    /* Chroma sample position
-     * Values as per 6.4.2 of the specification:
-     * EB_CSP_UNKNOWN:   default
-     * EB_CSP_VERTICAL:  value 0 from H.273 AKA "left"
-     * EB_CSP_COLOCATED: value 2 from H.273 AKA "top left"
+    // End of individual tuning flags
+
+    // Application Specific parameters
+
+    /**
+     * @brief API signal for the library to know the channel ID (used for pinning to cores).
+     *
+     * Min value is 0.
+     * Max value is 0xFFFFFFFF.
+     * Default is 0.
      */
-    EbChromaSamplePosition chroma_sample_position;
+    uint32_t channel_id;
+
+    /**
+     * @brief API signal for the library to know the active number of channels being encoded simultaneously.
+     *
+     * Min value is 1.
+     * Max value is 0xFFFFFFFF.
+     * Default is 1.
+     */
+    uint32_t active_channel_count;
+
+    // Threads management
+
+#if CLN_LP_LVLS
+#if !SVT_AV1_CHECK_VERSION(3, 0, 0)
+    /* logical_processors refers to how much parallelization the encoder will perform
+     * by setting the number of threads and pictures that can be handled simultaneously. If
+     * the value is 0, a deafult level will be chosen based on the number of cores on the
+     * machine. Levels 1-6 are supported. Beyond that, higher inputs
+     * will map to the highest level.
+     */
+    uint32_t logical_processors;
+#endif
+
+    /* The level of parallelism refers to how much parallelization the encoder will perform
+     * by setting the number of threads and pictures that can be handled simultaneously. If
+     * the value is 0, a deafult level will be chosen based on the number of cores on the
+     * machine. Levels 1-6 are supported. Beyond that, higher inputs
+     * will map to the highest level.
+     */
+    uint32_t level_of_parallelism;
+
+    /* Pin the execution of threads to the first N logical processors.
+     * 0: unpinned
+     * N: Pin threads to socket's first N processors
+     * default 0 */
+    uint32_t pin_threads;
+#else
+    /* The number of logical processor which encoder threads run on. If
+     * LogicalProcessors and TargetSocket are not set, threads are managed by
+     * OS thread scheduler. */
+    uint32_t logical_processors;
+
+    /* Unpin the execution .This option does not
+    * set the execution to be pinned to a specific number of cores when set to 1. this allows the execution
+    * of multiple encodes on the CPU without having to pin them to a specific mask
+    * 1: pinned threads
+    * 0: unpinned
+    * default 0 */
+    uint32_t pin_threads;
+#endif
+
+    /* Target socket to run on. For dual socket systems, this can specify which
+     * socket the encoder runs on.
+     *
+     * -1 = Both Sockets.
+     *  0 = Socket 0.
+     *  1 = Socket 1.
+     *
+     * Default is -1. */
+    int32_t target_socket;
+
+    /* CPU FLAGS to limit assembly instruction set used by encoder.
+    * Default is EB_CPU_FLAGS_ALL. */
+    EbCpuFlags use_cpu_flags;
+
+    // Debug tools
+    /* Instruct the library to calculate the recon to source for PSNR calculation
+    *
+    * Default is 0.*/
+    uint32_t stat_report;
+
+    /**
+     * @brief API Signal to output reconstructed yuv used for debug purposes.
+     * Using this will affect the speed of encoder.
+     *
+     * Default is false.
+     */
+    Bool recon_enabled;
+    // 1.0.0: Any additional fields shall go after here
+
+    /**
+     * @brief Signal that force-key-frames is enabled.
+     *
+     */
+    Bool force_key_frames;
+
+    /**
+     * @brief Signal to the library to treat intra_period_length as seconds and
+     * multiply by fps_num/fps_den.
+     */
+    Bool multiply_keyint;
+
+    // reference scaling parameters
+    /**
+     * @brief Reference scaling mode
+     * the available modes are defined in RESIZE_MODE
+     */
+    uint8_t resize_mode;
+    /**
+     * @brief Resize denominator
+     * this value can be from 8 to 16, means downscaling to 8/8-8/16 of original
+     * resolution in both width and height
+     */
+    uint8_t resize_denom;
+    /**
+     * @brief Resize denominator of key frames
+     * this value can be from 8 to 16, means downscaling to 8/8-8/16 of original
+     * resolution in both width and height
+     */
+    uint8_t resize_kf_denom;
+    /**
+     * @brief Signal to the library to enable quantisation matrices
+     *
+     * Default is false.
+     */
+    Bool enable_qm;
+    /**
+     * @brief Min quant matrix flatness. Applicable when enable_qm is true.
+     * Min value is 0.
+     * Max value is 15.
+     * Default is 8.
+     */
+    uint8_t min_qm_level;
+    /**
+     * @brief Max quant matrix flatness. Applicable when enable_qm is true.
+     * Min value is 0.
+     * Max value is 15.
+     * Default is 15.
+     */
+    uint8_t max_qm_level;
+
+    /**
+     * @brief gop_constraint_rc
+     *
+     * Currently, only applicable for VBR and  when GoP size is greater than 119 frames.
+     *
+     * When enabled, the rate control matches the target rate for each GoP.
+     *
+     * 0: off
+     * 1: on
+     * Default is 0.
+     */
+    Bool gop_constraint_rc;
+
+    /**
+     * @brief scale factors for lambda value for different frame update types
+     * factor >> 7 (/ 128) is the actual value in float
+     */
+    int32_t lambda_scale_factors[SVT_AV1_FRAME_UPDATE_TYPES];
+
+    /* Dynamic gop
+    *
+    * 0 = disable Dynamic GoP
+    * 1 = enable Dynamic GoP
+    *  Default is 1. */
+    Bool enable_dg;
+
+    /**
+     * @brief startup_mg_size
+     *
+     * When enabled, a MG with specified size will be inserted after the key frame.
+     * The MG size is determined by 2^startup_mg_size.
+     *
+     * 0: off
+     * 2: set hierarchical levels to 2 (MG size 4)
+     * 3: set hierarchical levels to 3 (MG size 8)
+     * 4: set hierarchical levels to 4 (MG size 16)
+     * Default is 0.
+     */
+    uint8_t startup_mg_size;
+
+    /* @brief reference scaling events for random access mode (resize-mode = 4)
+     *
+     * evt_num:          total count of events
+     * start_frame_nums: array of scaling start frame numbers
+     * resize_kf_denoms: array of scaling denominators of key-frame
+     * resize_denoms:    array of scaling denominators of non-key-frame
+     */
+    SvtAv1FrameScaleEvts frame_scale_evts;
+
+    /* ROI map
+    *
+    * 0 = disable ROI
+    * 1 = enable ROI
+    *  Default is 0. */
+    Bool enable_roi_map;
+
+    /* Stores the optional film grain synthesis info */
+    AomFilmGrain *fgs_table;
+
+    /* New parameters can go in under this line. Also deduct the size of the parameter */
+    /* from the padding array */
+
+    /* Variance boost
+     * false = disable variance boost
+     * true = enable variance boost
+     * Default is false. */
+    Bool enable_variance_boost;
+
+    /* @brief Selects the curve strength to boost low variance regions according to a fast-growing formula
+     * Default is 2 */
+    uint8_t variance_boost_strength;
+
+    /* @brief Picks a set of eight 8x8 variance values per superblock to determine boost
+     * Lower values enable detecting more blocks that need boosting, at the expense of more possible false positives (overall bitrate increase)
+     *  1: 1st octile
+     *  4: 4th octile
+     *  8: 8th octile
+     *  Default is 6 */
+    uint8_t variance_octile;
+
+    /*Add 128 Byte Padding to Struct to avoid changing the size of the public configuration struct*/
+#if CLN_LP_LVLS
+    uint8_t padding[128 - sizeof(Bool) - 2 * sizeof(uint8_t) - sizeof(uint32_t)];
+#else
+    uint8_t padding[128 - sizeof(Bool) - 2 * sizeof(uint8_t)];
+#endif
+
 } EbSvtAv1EncConfiguration;
 
 /**
@@ -701,8 +1011,7 @@ EB_API void svt_av1_print_version(void);
      *                  loaded with default params from the library. */
 EB_API EbErrorType svt_av1_enc_init_handle(
     EbComponentType **p_handle, void *p_app_data,
-    EbSvtAv1EncConfiguration
-        *config_ptr); // config_ptr will be loaded with default params from the library
+    EbSvtAv1EncConfiguration *config_ptr); // config_ptr will be loaded with default params from the library
 
 /* STEP 2: Set all configuration parameters.
      *
@@ -711,8 +1020,8 @@ EB_API EbErrorType svt_av1_enc_init_handle(
      * @ *pComponentParameterStructure  Encoder and buffer configurations will be copied to the library. */
 EB_API EbErrorType svt_av1_enc_set_parameter(
     EbComponentType *svt_enc_component,
-    EbSvtAv1EncConfiguration *
-        pComponentParameterStructure); // pComponentParameterStructure contents will be copied to the library
+    EbSvtAv1EncConfiguration
+        *pComponentParameterStructure); // pComponentParameterStructure contents will be copied to the library
 
 /* OPTIONAL: Set a single configuration parameter.
      *
@@ -720,8 +1029,8 @@ EB_API EbErrorType svt_av1_enc_set_parameter(
      * @ *pComponentParameterStructure  Encoder parameters structure.
      * @ *name                          Null terminated string containing the parameter name
      * @ *value                         Null terminated string containing the parameter value */
-EB_API EbErrorType svt_av1_enc_parse_parameter(
-    EbSvtAv1EncConfiguration *pComponentParameterStructure, const char *name, const char *value);
+EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *pComponentParameterStructure, const char *name,
+                                               const char *value);
 
 /* STEP 3: Initialize encoder and allocates memory to necessary buffers.
      *
@@ -748,17 +1057,20 @@ EB_API EbErrorType svt_av1_enc_stream_header_release(EbBufferHeaderType *stream_
      * Parameter:
      * @ *svt_enc_component  Encoder handler.
      * @ *p_buffer           Header pointer, picture buffer. */
-EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType    *svt_enc_component,
-                                            EbBufferHeaderType *p_buffer);
+EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType *svt_enc_component, EbBufferHeaderType *p_buffer);
 
-/* STEP 5: Receive packet.
-     * Parameter:
-    * @ *svt_enc_component  Encoder handler.
-     * @ **p_buffer          Header pointer to return packet with.
-     * @ pic_send_done       Flag to signal that all input pictures have been sent, this call becomes locking one this signal is 1.
-     * Non-locking call, returns EB_ErrorMax for an encode error, EB_NoErrorEmptyQueue when the library does not have any available packets.*/
-EB_API EbErrorType svt_av1_enc_get_packet(EbComponentType     *svt_enc_component,
-                                          EbBufferHeaderType **p_buffer, uint8_t pic_send_done);
+/**
+ * @brief Step 5: Receive packet.
+ * This function will become blocking if either pic_send_done is set to 1 or if we are in low-delay (pred-struct=1).
+ * Otherwise, this function is non-blocking and will return EB_NoErrorEmptyQueue if there are no packets available.
+ *
+ * @param svt_enc_component The encoder handler
+ * @param p_buffer Header pointer to return packet with
+ * @param pic_send_done Flag to signal that all input pictures have been sent. Should be either 0 or 1.
+ * @return EB_API Either EB_ErrorMax for an encode error or EB_NoErrorEmptyQueue if there are no available packets.
+ */
+EB_API EbErrorType svt_av1_enc_get_packet(EbComponentType *svt_enc_component, EbBufferHeaderType **p_buffer,
+                                          uint8_t pic_send_done);
 
 /* STEP 5-1: Release output buffer back into the pool.
      *
@@ -771,8 +1083,7 @@ EB_API void svt_av1_enc_release_out_buffer(EbBufferHeaderType **p_buffer);
      * Parameter:
      * @ *svt_enc_component  Encoder handler.
      * @ *p_buffer           Output buffer. */
-EB_API EbErrorType svt_av1_get_recon(EbComponentType    *svt_enc_component,
-                                     EbBufferHeaderType *p_buffer);
+EB_API EbErrorType svt_av1_get_recon(EbComponentType *svt_enc_component, EbBufferHeaderType *p_buffer);
 
 /* OPTIONAL: get stream information
      *
@@ -780,8 +1091,7 @@ EB_API EbErrorType svt_av1_get_recon(EbComponentType    *svt_enc_component,
      * @ *svt_enc_component  Encoder handler.
      * @ *stream_info_id SVT_AV1_STREAM_INFO_ID.
      * @ *info         output, the type depends on id */
-EB_API EbErrorType svt_av1_enc_get_stream_info(EbComponentType *svt_enc_component,
-                                               uint32_t stream_info_id, void *info);
+EB_API EbErrorType svt_av1_enc_get_stream_info(EbComponentType *svt_enc_component, uint32_t stream_info_id, void *info);
 
 /* STEP 6: Deinitialize encoder library.
      *

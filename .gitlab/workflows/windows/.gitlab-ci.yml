@@ -18,6 +18,7 @@
       -DREPRODUCIBLE_BUILDS=ON `
       -DBUILD_SHARED_LIBS=ON `
       -DBUILD_TESTING=ON `
+      -DSVT_AV1_LTO=ON `
       $env:EXTRA_CMAKE_FLAGS
     - cmake --build Build --config $(if ($env:CMAKE_BUILD_TYPE) {$env:CMAKE_BUILD_TYPE} else {"Release"})
 
@@ -33,12 +34,10 @@
 
 .windows-unit-test-base:
   extends: .windows-test-base
-  variables:
-    GTEST_OUTPUT: xml:report.xml
   artifacts:
     when: always
     reports:
-      junit: report.xml
+      junit: reports/*.xml
   needs:
     - Win64 (MSVC, Tests)
 
@@ -49,8 +48,8 @@
 Win64 (MSVC, Tests):
   extends: .windows-compiler-base
   variables:
-    CFLAGS: /WX
-    CXXFLAGS: /WX
+    CFLAGS: /WX /D_CRT_SECURE_NO_WARNINGS=1
+    CXXFLAGS: /WX /D_CRT_SECURE_NO_WARNINGS=1
     CMAKE_GENERATOR: Visual Studio 16 2019
   parallel:
     matrix:
@@ -69,22 +68,23 @@ Win64 (MSVC, Tests):
 
 Win64 Unit Tests:
   extends: .windows-unit-test-base
+  variables:
+    SVT_AV1_TEST_VECTOR_PATH: $CI_PROJECT_DIR/test/vectors
+    TOTAL_SHARDS: 4
   parallel:
     matrix:
-      - UNIT_TEST: SvtAv1UnitTests
-        GTEST_TOTAL_SHARDS: 3
-        GTEST_SHARD_INDEX: [0, 1, 2]
-      - UNIT_TEST: SvtAv1E2ETests
-        SVT_AV1_TEST_VECTOR_PATH: $CI_PROJECT_DIR/test/vectors
+      - SHARD_INDEX: [0, 1, 2, 3]
   cache:
     key: testvectors
     paths:
       - test/vectors
     policy: pull-push
+  before_script:
+    - Invoke-WebRequest -OutFile gtest_parallel.py -Uri https://raw.githubusercontent.com/1480c1/gtest-parallel/unique_id/gtest_parallel.py
   script:
     - cmake -B Build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
     - cmake --build Build --target TestVectors
-    - "& ./Bin/Release/$env:UNIT_TEST --gtest_filter=-*FFT*"
+    - python gtest_parallel.py --print_test_times --shard_index=$env:SHARD_INDEX --shard_count=$env:TOTAL_SHARDS ./Bin/Release/SvtAv1UnitTests ./Bin/Release/SvtAv1E2ETests -- --gtest_output="xml:reports/{#}.xml"
 
 Win64 Enc Test:
   extends: .windows-test-base
@@ -100,7 +100,7 @@ Win64 Enc Test:
 
 Win64 FFmpeg (Static):
   extends: .windows-test-base
-  stage: compile
+  stage: ffmpeg
   variables:
     CC: ccache gcc
     CXX: ccache g++
@@ -110,23 +110,25 @@ Win64 FFmpeg (Static):
     GIT_DEPTH: 0
     PREFIX_DIR: C:/msys64/mingw64
   before_script:
-    - !reference [.ffmpeg-before-script-clone]
+    - !reference [.ffmpeg-before-script-clone-windows]
   script:
     # SVT-AV1
     - |
-      cmake `
+      time cmake `
         -S svtav1-src `
         -B svtav1-build `
         -DCMAKE_BUILD_TYPE=Release `
         -DBUILD_SHARED_LIBS=OFF `
         -DCMAKE_INSTALL_PREFIX="$env:PREFIX_DIR" `
         -DBUILD_APPS=OFF `
-        -DBUILD_DEC=OFF `
-        -DREPRODUCIBLE_BUILDS=ON
-      cmake --build svtav1-build --config Release --target install
+        -DREPRODUCIBLE_BUILDS=ON || $(
+          Get-Content svtav1-build/CMakeFiles/CMakeConfigureLog.yaml
+          exit 1
+        )
+      time cmake --build svtav1-build --config Release --target install
     # aom
     - |
-      cmake `
+      time cmake `
         -S aom-src `
         -B aom-build `
         -DCMAKE_BUILD_TYPE=Release `
@@ -137,12 +139,12 @@ Win64 FFmpeg (Static):
         -DENABLE_DOCS=0 `
         -DENABLE_TESTDATA=0 `
         -DENABLE_TOOLS=0
-      cmake --build aom-build --config Release --target install
+      time cmake --build aom-build --config Release --target install
     # libvpx
     - |
       mkdir vpx-build
       cd vpx-build
-      dash ../libvpx-src/configure `
+      time dash ../libvpx-src/configure `
         --disable-dependency-tracking `
         --disable-docs `
         --disable-examples `
@@ -158,11 +160,11 @@ Win64 FFmpeg (Static):
         --enable-vp9-highbitdepth `
         --enable-vp9-postproc `
         --prefix="$env:PREFIX_DIR"
-      make -j $((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors + 2) install
+      time make -j $((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors + 2) install
       cd ..
     # dav1d
     - |
-      meson setup `
+      time meson setup `
         --default-library static `
         --buildtype release `
         --libdir lib `
@@ -171,10 +173,10 @@ Win64 FFmpeg (Static):
         -Denable_examples=false `
         -Denable_tools=false `
         dav1d-build dav1d-src
-      meson install -C dav1d-build
+      time meson install -C dav1d-build
     # vmaf
     - |
-      meson setup `
+      time meson setup `
         --default-library static `
         --buildtype release `
         --libdir lib `
@@ -184,14 +186,14 @@ Win64 FFmpeg (Static):
         -Dbuilt_in_models=true `
         -Denable_float=true `
         vmaf-build vmaf-src/libvmaf
-      meson install -C vmaf-build
+      time meson install -C vmaf-build
 
     # FFmpeg
     # Uses ld=CXX for libvmaf to autolink the stdc++ library
     - |
       mkdir ffmpeg-build
       cd ffmpeg-build
-      bash ../ffmpeg-src/configure `
+      time bash ../ffmpeg-src/configure `
         --arch=x86_64 `
         --pkg-config-flags="--static" `
         --cc="${env:CC}" `
@@ -205,7 +207,7 @@ Win64 FFmpeg (Static):
         --enable-libvmaf `
         --enable-libvpx `
         --disable-shared
-      make -j $((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors + 2) install
+      time make -j $((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors + 2) install
       cp ./ffmpeg.exe $env:CI_PROJECT_DIR
     - ccache -s
   artifacts:

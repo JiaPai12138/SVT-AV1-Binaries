@@ -18,17 +18,19 @@
  * @author Cidana-Edmond Cidana-Ryan Cidana-Wenyao
  *
  ******************************************************************************/
+#include <algorithm>
 
 #include "EbSvtAv1Enc.h"
 #include "Y4mVideoSource.h"
 #include "YuvVideoSource.h"
 #include "DummyVideoSource.h"
 #include "gtest/gtest.h"
-#include "EbDefinitions.h"
+#include "definitions.h"
 #include "RefDecoder.h"
 #include "SvtAv1E2EFramework.h"
 #include "CompareTools.h"
 #include "ConfigEncoder.h"
+#include "EbSvtAv1Metadata.h"
 
 #ifdef _WIN32
 #define fseeko _fseeki64
@@ -54,15 +56,13 @@ VideoSource *SvtAv1E2ETestFramework::prepare_video_src(
                                        std::get<2>(vector),
                                        std::get<3>(vector),
                                        std::get<4>(vector),
-                                       (uint8_t)std::get<5>(vector),
-                                       std::get<6>(vector));
+                                       (uint8_t)std::get<5>(vector));
         break;
     case DUMMY_SOURCE:
         video_src = new DummyVideoSource(std::get<2>(vector),
                                          std::get<3>(vector),
                                          std::get<4>(vector),
-                                         (uint8_t)std::get<5>(vector),
-                                         std::get<6>(vector));
+                                         (uint8_t)std::get<5>(vector));
         break;
     default: assert(0); break;
     }
@@ -89,7 +89,6 @@ void SvtAv1E2ETestFramework::setup_src_param(const VideoSource *source,
     config.source_width = source->get_width_with_padding();
     config.source_height = source->get_height_with_padding();
     config.encoder_bit_depth = source->get_bit_depth();
-    config.compressed_ten_bit_format = source->get_compressed_10bit_mode();
 }
 
 SvtAv1E2ETestFramework::SvtAv1E2ETestFramework() : enc_setting(GetParam()) {
@@ -136,6 +135,14 @@ void SvtAv1E2ETestFramework::config_test() {
                 set_enc_config(enc_config_, x.first.c_str(), x.second.c_str());
             printf("EncSetting: %s = %s\n", x.first.c_str(), x.second.c_str());
         }
+    }
+    // sort frame event vector
+    if (enc_setting.event_vector.size() > 0) {
+        std::sort(enc_setting.event_vector.begin(),
+                  enc_setting.event_vector.end(),
+                  [](TestFrameEvent evt1, TestFrameEvent evt2) {
+                      return std::get<1>(evt1) < std::get<1>(evt2);
+                  });
     }
 }
 
@@ -359,6 +366,52 @@ void SvtAv1E2ETestFramework::output_stat() {
     }
 }
 
+void SvtAv1E2ETestFramework::gen_frame_event(EncTestSetting &setting,
+                                             uint32_t frame_count,
+                                             void **head) {
+    EbPrivDataNode *node = nullptr;
+    for (TestFrameEvent event : setting.event_vector) {
+        if (std::get<1>(event) == frame_count) {
+            printf("%s param list:\t", std::get<0>(event).c_str());
+            for (std::string str : std::get<3>(event))
+                printf("%s\t", str.c_str());
+            printf("\n");
+            EbPrivDataNode *new_node =
+                (EbPrivDataNode *)malloc(sizeof(EbPrivDataNode));
+            ASSERT_NE(new_node, nullptr);
+            switch (std::get<2>(event)) {
+            case REF_FRAME_SCALING_EVENT: {
+                EbRefFrameScale *data =
+                    (EbRefFrameScale *)malloc(sizeof(EbRefFrameScale));
+                ASSERT_NE(data, nullptr);
+                data->scale_mode = std::stoi(std::get<3>(event)[0]);
+                data->scale_denom = std::stoi(std::get<3>(event)[1]);
+                data->scale_kf_denom = std::stoi(std::get<3>(event)[2]);
+                new_node->size = sizeof(EbRefFrameScale);
+                new_node->node_type = REF_FRAME_SCALING_EVENT;
+                new_node->data = data;
+            } break;
+            default: GTEST_FAIL() << "unhandled frame event"; break;
+            }
+            new_node->next = node;
+            node = new_node;
+        }
+    }
+    *head = node;
+}
+
+static void free_private_data_list(void *node_head) {
+    while (node_head) {
+        EbPrivDataNode *node = (EbPrivDataNode *)node_head;
+        node_head = node->next;
+        if (node->data) {
+            free(node->data);
+            node->data = nullptr;
+        }
+        free(node);
+    };
+}
+
 void SvtAv1E2ETestFramework::run_encode_process() {
     static const char READ_SRC[] = "read_src";
     static const char ENCODING[] = "encoding";
@@ -399,7 +452,12 @@ void SvtAv1E2ETestFramework::run_encode_process() {
                     av1enc_ctx_.input_picture_buffer->n_filled_len =
                         video_src_->get_frame_size();
                     av1enc_ctx_.input_picture_buffer->flags = 0;
-                    av1enc_ctx_.input_picture_buffer->p_app_private = nullptr;
+                    free_private_data_list(
+                        av1enc_ctx_.input_picture_buffer->p_app_private);
+                    gen_frame_event(
+                        enc_setting,
+                        video_src_->get_frame_index(),
+                        &av1enc_ctx_.input_picture_buffer->p_app_private);
                     av1enc_ctx_.input_picture_buffer->pts =
                         video_src_->get_frame_index();
                     av1enc_ctx_.input_picture_buffer->pic_type =
@@ -447,7 +505,7 @@ void SvtAv1E2ETestFramework::run_encode_process() {
             // try to get one encoded frame, flush the encoder
             // if src_file_eos is true
             do {
-                // non-blocking call
+                // non-blocking call if not using low-delay
                 EbBufferHeaderType *enc_out = nullptr;
                 {
                     TimeAutoCount counter(ENCODING, collect_);
@@ -461,14 +519,24 @@ void SvtAv1E2ETestFramework::run_encode_process() {
 
                 // process the output buffer
                 if (return_error != EB_NoErrorEmptyQueue && enc_out) {
+#if OPT_LD_LATENCY2
+                    if (enc_out->flags & EB_BUFFERFLAG_EOS) {
+                        enc_file_eos = true;
+                        printf("Encoder EOS\n");
+                    } else {
+                        // send to reference decoder
+                        TimeAutoCount counter(CONFORMANCE, collect_);
+                        process_compress_data(enc_out);
+                    }
+#else
                     // send to reference decoder
                     TimeAutoCount counter(CONFORMANCE, collect_);
                     process_compress_data(enc_out);
                     if (enc_out->flags & EB_BUFFERFLAG_EOS) {
                         enc_file_eos = true;
                         printf("Encoder EOS\n");
-                        break;
                     }
+#endif
                     // check if the process has encounter error, break out if
                     // true, like the recon frame does not match with decoded
                     // frame.
@@ -485,7 +553,7 @@ void SvtAv1E2ETestFramework::run_encode_process() {
                 // Release the output buffer
                 if (enc_out != nullptr)
                     svt_av1_enc_release_out_buffer(&enc_out);
-            } while (src_file_eos);
+            } while (src_file_eos && !enc_file_eos);
         }  // if (!enc_file_eos)
     } while (!rec_file_eos || !src_file_eos || !enc_file_eos);
 
@@ -552,8 +620,8 @@ void SvtAv1E2ETestFramework::write_output_header() {
                  av1enc_ctx_.enc_params.frame_rate_numerator);  // rate
     mem_put_le32(header + 20,
                  av1enc_ctx_.enc_params.frame_rate_denominator);  // scale
-    mem_put_le32(header + 24, 0);  // length
-    mem_put_le32(header + 28, 0);  // unused
+    mem_put_le32(header + 24, 0);                                 // length
+    mem_put_le32(header + 28, 0);                                 // unused
     if (output_file_ && output_file_->file)
         fwrite(header, 1, IVF_STREAM_HEADER_SIZE, output_file_->file);
 }
@@ -646,26 +714,26 @@ void SvtAv1E2ETestFramework::check_psnr(const VideoFrame &frame) {
 }
 
 static bool transfer_frame_planes(VideoFrame *frame) {
-    if (frame->buf_size != VideoFrame::calculate_max_frame_size(*frame)) {
+    if (frame->buf_size > VideoFrame::calculate_max_frame_size(*frame)) {
         printf("buffer size doesn't match!\n");
         return false;
     }
 
-    uint32_t height_scale = 1;
+    uint32_t ss_y = 0;
     if (frame->format == IMG_FMT_420 ||
         frame->format == IMG_FMT_420P10_PACKED ||
         frame->format == IMG_FMT_I420) {
-        height_scale = 2;
+        ss_y = 1;
     }
     if (frame->stride[3]) {
         uint32_t offset = frame->stride[0] * frame->height +
                           ((frame->stride[1] + frame->stride[2]) *
-                           frame->height / height_scale);
+                           ((frame->height + ss_y) >> ss_y));
         memcpy(frame->planes[3], frame->buffer + offset, frame->buf_size >> 2);
     }
     if (frame->stride[2]) {
         uint32_t offset = frame->stride[0] * frame->height +
-                          (frame->stride[1] * frame->height / height_scale);
+                          (frame->stride[1] * ((frame->height + ss_y) >> ss_y));
         memcpy(frame->planes[2], frame->buffer + offset, frame->buf_size >> 2);
     }
     if (frame->stride[1]) {
@@ -700,6 +768,30 @@ void SvtAv1E2ETestFramework::get_recon_frame(const SvtAv1Context &ctxt,
             recon->delete_frame(new_frame);
             break;
         } else {
+            // adjust recon frame size if resize feature enabled in encoder
+            if (recon_frame.n_filled_len != new_frame->buf_size &&
+                recon_frame.metadata) {
+                for (size_t i = 0; i < recon_frame.metadata->sz; i++) {
+                    SvtMetadataT *metadata =
+                        recon_frame.metadata->metadata_array[i];
+                    ASSERT_NE(metadata, nullptr);
+                    if (metadata->type == EB_AV1_METADATA_TYPE_FRAME_SIZE) {
+                        ASSERT_EQ(metadata->sz, sizeof(SvtMetadataFrameSizeT));
+                        SvtMetadataFrameSizeT *frame_size =
+                            (SvtMetadataFrameSizeT *)metadata->payload;
+                        new_frame->width = frame_size->width;
+                        new_frame->height = frame_size->height;
+                        new_frame->disp_width = frame_size->disp_width;
+                        new_frame->disp_height = frame_size->disp_height;
+                        new_frame->stride[0] = frame_size->stride;
+                        new_frame->stride[2] = new_frame->stride[1] =
+                            (frame_size->stride + frame_size->subsampling_x) >>
+                            frame_size->subsampling_x;
+                        new_frame->buf_size = recon_frame.n_filled_len;
+                        break;
+                    }
+                }
+            }
             ASSERT_LE(recon_frame.n_filled_len, new_frame->buf_size)
                 << "recon frame size incorrect@" << recon_frame.pts;
             // mark the recon eos flag

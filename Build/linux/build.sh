@@ -72,10 +72,8 @@ For each enable-*, there is a disable-* option, and vice versa.
     --c-only, c-only    Compile only C code
     --clean, clean      Remove build and Bin folders
     --debug, debug      Build debug
-    --disable-avx512,   Disable building avx512 code (Default)
+    --disable-avx512,   Disable building avx512 code
     disable-avx512
-    --enable-avx512,    Enable building avx512 code (if supported)
-    enable-avx512
     --enable-lto,       Enable link time optimization
     enable-lto
     --disable-native,   Disable the use of -march=native
@@ -88,8 +86,7 @@ For each enable-*, there is a disable-* option, and vice versa.
 -g, --gen, gen=*        Set CMake generator
 -i, --install, install  Install build [Default release]
 -j, --jobs, jobs=*      Set number of jobs for make/CMake [$jobs]
-    --no-enc, no-enc    Don't build the encoder app and libs
-    --no-dec, no-dec    Don't build the decoder app and libs
+    --no-apps, no-apps  Don't build the apps, only build the libs
 -p, --prefix, prefix=*  Set installation prefix
     --pgo-dir,          Directory to store the pgo profiles
     pgo-dir=*
@@ -107,13 +104,21 @@ For each enable-*, there is a disable-* option, and vice versa.
     --test, test        Build Unit Tests
 -t, --toolchain,        Set CMake toolchain file
     toolchain=*
+    --android-ndk,      Set path to android NDK for android builds
 -v, --verbose, verbose  Print out commands
+    --minimal-build,    Enable minimal build
+    minimal-build
+    --external-cpuinfo,
+    external-cpuinfo    Use external cpuinfo library
 
 Example usage:
     build.sh -xi debug test
     build.sh jobs=8 all cc=clang cxx=clang++
     build.sh -j 4 all -t "https://gist.githubusercontent.com/peterspackman/8cf73f7f12ba270aa8192d6911972fe8/raw/mingw-w64-x86_64.cmake"
     build.sh generator=Xcode cc=clang
+
+Options for specifying android build targets -
+    build.sh -s Android -t cmake/toolchains/android_aarch64_toolchain.cmake --android-ndk <Path to NDK>
 EOF
 }
 
@@ -299,8 +304,7 @@ parse_options() {
         gen=*) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -G${1#*=}" && shift ;;
         install) build_install=true && shift ;;
         jobs=*) jobs="${1#*=}" && shift ;;
-        no-enc) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DBUILD_ENC=OFF" && shift ;;
-        no-dec) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DBUILD_DEC=OFF" && shift ;;
+        no-apps) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DBUILD_APPS=OFF" && shift ;;
         prefix=*) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DCMAKE_INSTALL_PREFIX=${1#*=}" && shift ;;
         pgo-dir=*) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DSVT_AV1_PGO_DIR=${1#*=}" && shift ;;
         pgo-compile-gen) PGO_COMPILE_STAGE=gen && shift ;;
@@ -335,7 +339,13 @@ parse_options() {
             esac
             CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DCMAKE_TOOLCHAIN_FILE=$toolchain" && shift
             ;;
+        android-ndk=*)
+            CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DCMAKE_ANDROID_NDK=${1#*=}"
+            shift
+            ;;
         verbose) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DCMAKE_VERBOSE_MAKEFILE=1" && shift ;;
+        minimal-build) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DMINIMAL_BUILD=ON" && shift ;;
+        external-cpuinfo) CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS -DUSE_EXTERNAL_CPUINFO=ON" && shift ;;
         *) print_message "Unknown option: $1" && shift ;;
         esac
     done
@@ -367,8 +377,7 @@ else
             debug) parse_options debug && shift ;;
             disable* | enable*) parse_options "$match" && shift ;;
             install) parse_options install && shift ;;
-            no-enc) parse_options no-enc && shift ;;
-            no-dec) parse_options no-dec && shift ;;
+            no-apps) parse_options no-apps && shift ;;
             pgo-compile-gen) parse_options pgo-compile-gen && shift ;;
             pgo-compile-use) parse_options pgo-compile-use && shift ;;
             release) parse_options release && shift ;;
@@ -378,7 +387,9 @@ else
             toolchain) parse_options toolchain="$2" && shift ;;
             test) parse_options tests && shift ;;
             verbose) parse_options verbose && shift ;;
-            asm | bindir | cc | cxx | gen | jobs | pgo-dir | pgo-videos | prefix | sanitizer | target_system)
+            minimal-build) parse_options minimal-build && shift ;;
+            external-cpuinfo) parse_options external-cpuinfo && shift ;;
+            asm | bindir | cc | cxx | gen | jobs | pgo-dir | pgo-videos | prefix | sanitizer | target_system | android-ndk)
                 parse_equal_option "$1" "$2"
                 case $1 in
                 *=*) shift ;;
@@ -488,9 +499,9 @@ else
             pgo-compile-gen) parse_options pgo-compile-gen && shift ;;
             pgo-compile-use) parse_options pgo-compile-use && shift ;;
             pgo-videos=*) parse_options pgo-videos="${1#*=}" && shift ;;
-            no-enc) parse_options no-enc && shift ;;
-            no-dec) parse_options no-dec && shift ;;
+            no-apps) parse_options no-apps && shift ;;
             target_system=*) parse_options target_system="${1#*=}" && shift ;;
+            android-ndk=*) parse_options android-ndk="${1#*=}" && shift ;;
             shared) parse_options shared && shift ;;
             static) parse_options static && shift ;;
             native) parse_options native && shift ;;
@@ -499,6 +510,8 @@ else
             test) parse_options tests && shift ;;
             toolchain=*) parse_options toolchain="${1#*=}" && shift ;;
             verbose) parse_options verbose && shift ;;
+            minimal-build) parse_options minimal-build && shift ;;
+            external-cpuinfo) parse_options external-cpuinfo && shift ;;
             end) ${IN_SCRIPT:-false} && exit ;;
             *) die "Error, unknown option: $1" ;;
             esac

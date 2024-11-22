@@ -21,18 +21,10 @@
  *
  ******************************************************************************/
 #include "gtest/gtest.h"
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
 #include "aom_dsp_rtcd.h"
 #include "random.h"
 #include "util.h"
-#include "EbUtility.h"
+#include "utility.h"
 
 using std::tuple;
 using svt_av1_test_tool::SVTRandom;  // to generate the random
@@ -99,23 +91,34 @@ TEST_P(OBMCsad_Test, RunCheckOutput) {
     run_test(1000);
 };
 
-#define OBMC_SAD_FUNC_C(W, H) svt_aom_obmc_sad##W##x##H##_c
-#define OBMC_SAD_FUNC_AVX2(W, H) svt_aom_obmc_sad##W##x##H##_avx2
-#define GEN_OBMC_SAD_TEST_PARAM(W, H) \
-    Obmcsad_Param(OBMC_SAD_FUNC_C(W, H), OBMC_SAD_FUNC_AVX2(W, H))
-#define GEN_TEST_PARAMS(GEN_PARAM)                                          \
-    GEN_PARAM(128, 128), GEN_PARAM(128, 64), GEN_PARAM(64, 128),            \
-        GEN_PARAM(64, 64), GEN_PARAM(64, 32), GEN_PARAM(32, 64),            \
-        GEN_PARAM(32, 32), GEN_PARAM(32, 16), GEN_PARAM(16, 32),            \
-        GEN_PARAM(16, 16), GEN_PARAM(16, 8), GEN_PARAM(8, 16),              \
-        GEN_PARAM(8, 8), GEN_PARAM(8, 4), GEN_PARAM(4, 8), GEN_PARAM(4, 4), \
-        GEN_PARAM(4, 16), GEN_PARAM(16, 4), GEN_PARAM(8, 32),               \
-        GEN_PARAM(32, 8), GEN_PARAM(16, 64), GEN_PARAM(64, 16)
+#define OBMC_SAD_FUNC(W, H, opt) svt_aom_obmc_sad##W##x##H##_##opt
+#define GEN_OBMC_SAD_TEST_PARAM(W, H, opt) \
+    Obmcsad_Param(OBMC_SAD_FUNC(W, H, c), OBMC_SAD_FUNC(W, H, opt))
+#define GEN_TEST_PARAMS(GEN_PARAM, opt)                                       \
+    {                                                                         \
+        GEN_PARAM(128, 128, opt), GEN_PARAM(128, 64, opt),                    \
+            GEN_PARAM(64, 128, opt), GEN_PARAM(64, 64, opt),                  \
+            GEN_PARAM(64, 32, opt), GEN_PARAM(32, 64, opt),                   \
+            GEN_PARAM(32, 32, opt), GEN_PARAM(32, 16, opt),                   \
+            GEN_PARAM(16, 32, opt), GEN_PARAM(16, 16, opt),                   \
+            GEN_PARAM(16, 8, opt), GEN_PARAM(8, 16, opt),                     \
+            GEN_PARAM(8, 8, opt), GEN_PARAM(8, 4, opt), GEN_PARAM(4, 8, opt), \
+            GEN_PARAM(4, 4, opt), GEN_PARAM(4, 16, opt),                      \
+            GEN_PARAM(16, 4, opt), GEN_PARAM(8, 32, opt),                     \
+            GEN_PARAM(32, 8, opt), GEN_PARAM(16, 64, opt),                    \
+            GEN_PARAM(64, 16, opt)                                            \
+    }
 
-static const Obmcsad_Param obmc_sad_test_params[] = {
-    GEN_TEST_PARAMS(GEN_OBMC_SAD_TEST_PARAM)};
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
+    AVX2, OBMCsad_Test,
+    ::testing::ValuesIn(GEN_TEST_PARAMS(GEN_OBMC_SAD_TEST_PARAM, avx2)));
+#endif  // ARCH_X86_64
 
-INSTANTIATE_TEST_CASE_P(OBMC, OBMCsad_Test,
-                        ::testing::ValuesIn(obmc_sad_test_params));
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    NEON, OBMCsad_Test,
+    ::testing::ValuesIn(GEN_TEST_PARAMS(GEN_OBMC_SAD_TEST_PARAM, neon)));
+#endif  // ARCH_AARCH64
 
 }  // namespace

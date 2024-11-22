@@ -18,21 +18,15 @@
  * @author Cidana-Wenyao
  *
  ******************************************************************************/
-#include "gtest/gtest.h"
 #include <stdlib.h>
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
-#include "EbDefinitions.h"
-#include "EbTransforms.h"
+
+#include "gtest/gtest.h"
+#include "definitions.h"
+#include "transforms.h"
 #include "TxfmCommon.h"
-#include "EbCabacContextModel.h"  // use tx_type_to_class
+#include "cabac_context_model.h"  // use tx_type_to_class
 #include "util.h"
+#include "random.h"
 
 static bool valid_scan(const int16_t *scan, const int16_t *iscan, int si,
                        int expected_pos) {
@@ -146,3 +140,81 @@ TEST(AdaptiveScanTest, scan_tables_test) {
         }
     }
 }
+
+using svt_av1_test_tool::SVTRandom;
+
+using CopyMiMapGridFunc = void (*)(ModeInfo **mi_grid_ptr, uint32_t mi_stride,
+                                   uint8_t num_rows, uint8_t num_cols);
+
+using CopyMiMapGridParam = std::tuple<int, CopyMiMapGridFunc>;
+
+class CopyMiMapGridTest : public ::testing::TestWithParam<CopyMiMapGridParam> {
+  public:
+    CopyMiMapGridTest()
+        : tx_size_(TEST_GET_PARAM(0)), test_func_(TEST_GET_PARAM(1)) {
+    }
+
+    void test_match() {
+        SVTRandom rnd(0, (1 << 10) - 1);
+        const int max_size = 100;
+        ModeInfo *mi_grid_ref[max_size * max_size];
+        ModeInfo *mi_grid_tst[max_size * max_size];
+
+        const int txb_height = get_txb_high((TxSize)tx_size_);
+        const int txb_width = get_txb_wide((TxSize)tx_size_);
+        uint32_t stride = txb_width + rnd.random() % 10;
+
+        memset(mi_grid_ref, 0xcd, sizeof(mi_grid_ref));
+        memset(mi_grid_tst, 0xcd, sizeof(mi_grid_ref));
+
+        mi_grid_ref[0] = mi_grid_tst[0] = (ModeInfo *)((uint64_t)rnd.random());
+
+        svt_copy_mi_map_grid_c(mi_grid_ref, stride, txb_height, txb_width);
+
+        test_func_(mi_grid_tst, stride, txb_height, txb_width);
+
+        EXPECT_TRUE(memcmp(mi_grid_ref, mi_grid_tst, sizeof(mi_grid_ref)) == 0);
+
+        // special case non power of 2 cols
+        for (int cols = 0; cols < 15; ++cols) {
+            stride = cols + rnd.random() % 10;
+
+            memset(mi_grid_ref, 0xcd, sizeof(mi_grid_ref));
+            memset(mi_grid_tst, 0xcd, sizeof(mi_grid_ref));
+
+            mi_grid_ref[0] = mi_grid_tst[0] =
+                (ModeInfo *)((uint64_t)rnd.random());
+
+            svt_copy_mi_map_grid_c(mi_grid_ref, stride, cols, cols);
+
+            test_func_(mi_grid_tst, stride, cols, cols);
+
+            EXPECT_TRUE(memcmp(mi_grid_ref, mi_grid_tst, sizeof(mi_grid_ref)) ==
+                        0);
+        }
+    }
+
+  private:
+    int tx_size_;
+    CopyMiMapGridFunc test_func_;
+};
+
+TEST_P(CopyMiMapGridTest, test_match) {
+    test_match();
+}
+
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
+    AVX2, CopyMiMapGridTest,
+    ::testing::Combine(::testing::Range(static_cast<int>(TX_4X4),
+                                        static_cast<int>(TX_SIZES_ALL)),
+                       ::testing::Values(svt_copy_mi_map_grid_avx2)));
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    NEON, CopyMiMapGridTest,
+    ::testing::Combine(::testing::Range(static_cast<int>(TX_4X4),
+                                        static_cast<int>(TX_SIZES_ALL)),
+                       ::testing::Values(svt_copy_mi_map_grid_neon)));
+#endif  // ARCH_AARCH64

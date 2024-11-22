@@ -14,23 +14,15 @@
  * @file IntraBcUtilTest.cc
  *
  * @brief Unit test of Intra BC utility:
- * - av1_is_dv_valid
+ * - svt_aom_is_dv_valid
  *
  * @author Cidana-Edmond
  *
  ******************************************************************************/
 
 #include "gtest/gtest.h"
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
-#include "EbDefinitions.h"
-#include "EbAdaptiveMotionVectorPrediction.h"
+#include "definitions.h"
+#include "adaptive_mv_pred.h"
 #include "util.h"
 
 namespace {
@@ -121,18 +113,14 @@ class DvValiationTest : public ::testing::TestWithParam<DvValidationParam> {
         xd.tile.mi_col_start = 24 * MAX_MIB_SIZE;
         xd.tile.mi_col_end =
             xd.tile.mi_col_start + kTileMaxMibWidth * MAX_MIB_SIZE;
-        xd.plane[1].subsampling_x = 1;
-        xd.plane[1].subsampling_y = 1;
-        xd.plane[2].subsampling_x = 1;
-        xd.plane[2].subsampling_y = 1;
 
         ASSERT_EQ(TEST_GET_PARAM(4),
-                  av1_is_dv_valid(TEST_GET_PARAM(0),
-                                  &xd,
-                                  xd.tile.mi_row_start + TEST_GET_PARAM(1),
-                                  xd.tile.mi_col_start + TEST_GET_PARAM(2),
-                                  TEST_GET_PARAM(3),
-                                  MAX_MIB_SIZE_LOG2));
+                  svt_aom_is_dv_valid(TEST_GET_PARAM(0),
+                                      &xd,
+                                      xd.tile.mi_row_start + TEST_GET_PARAM(1),
+                                      xd.tile.mi_col_start + TEST_GET_PARAM(2),
+                                      TEST_GET_PARAM(3),
+                                      MAX_MIB_SIZE_LOG2));
     }
 };
 
@@ -140,7 +128,7 @@ TEST_P(DvValiationTest, IsDvValidate) {
     is_dv_validate();
 }
 
-INSTANTIATE_TEST_CASE_P(AV1, DvValiationTest,
-                        ::testing::ValuesIn(dv_validation_params));
+INSTANTIATE_TEST_SUITE_P(AV1, DvValiationTest,
+                         ::testing::ValuesIn(dv_validation_params));
 
 }  // namespace

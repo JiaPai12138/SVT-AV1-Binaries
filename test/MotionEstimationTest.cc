@@ -12,13 +12,13 @@
 
 #include "gtest/gtest.h"
 #include "aom_dsp_rtcd.h"
-#include "EbDefinitions.h"
-#include "EbComputeSAD_AVX2.h"
-#include "EbComputeSAD_C.h"
-#include "EbMeSadCalculation.h"
-#include "EbMotionEstimation.h"
-#include "EbUnitTest.h"
-#include "EbUnitTestUtility.h"
+#include "definitions.h"
+#include "compute_sad_avx2.h"
+#include "compute_sad_c.h"
+#include "me_sad_calculation.h"
+#include "motion_estimation.h"
+#include "unit_test.h"
+#include "unit_test_utility.h"
 
 static const int num_sad = 22;
 
@@ -175,7 +175,7 @@ void sadMxN_speed_test(const AomSadFn *const func_table) {
         const uint32_t width = sad_size_info[j].width;
         const uint32_t height = sad_size_info[j].height;
         const uint64_t num_loop = 100000000 / (width + height);
-        uint32_t sad_org, sad_opt;
+        uint32_t sad_org = 0, sad_opt = 0;
 
         svt_av1_get_time(&start_time_seconds, &start_time_useconds);
 
@@ -201,12 +201,12 @@ void sadMxN_speed_test(const AomSadFn *const func_table) {
         EXPECT_EQ(sad_org, sad_opt);
 
         printf("Average Nanoseconds per Function Call\n");
-        printf("    aom_sad%2dx%2d_c()   : %6.2f\n",
+        printf("    aom_sad%2ux%2u_c()   : %6.2f\n",
                width,
                height,
                1000000 * time_c / num_loop);
         printf(
-            "    aom_sad%2dx%2d_opt() : %6.2f   (Comparison: "
+            "    aom_sad%2ux%2u_opt() : %6.2f   (Comparison: "
             "%5.2fx)\n",
             width,
             height,
@@ -345,19 +345,19 @@ AomSadMultiDFn aom_sad_4d_avx512_func_ptr_array[num_sad] = {
     svt_aom_sad128x64x4d_avx512,
     svt_aom_sad128x128x4d_avx512};
 
-TEST(MotionEstimation_avx512, sadMxN_match) {
+TEST(AVX512_MotionEstimation_avx512, sadMxN_match) {
     sadMxN_match_test(aom_sad_avx512_func_ptr_array);
 }
 
-TEST(MotionEstimation_avx512, sadMxNx4d_match) {
+TEST(AVX512_MotionEstimation_avx512, sadMxNx4d_match) {
     sadMxNx4d_match_test(aom_sad_4d_avx512_func_ptr_array);
 }
 
-TEST(MotionEstimation_avx512, DISABLED_sadMxN_speed) {
+TEST(AVX512_MotionEstimation_avx512, DISABLED_sadMxN_speed) {
     sadMxN_speed_test(aom_sad_avx512_func_ptr_array);
 }
 
-TEST(MotionEstimation_avx512, DISABLED_sadMxNx4d_speed) {
+TEST(AVX512_MotionEstimation_avx512, DISABLED_sadMxNx4d_speed) {
     sadMxNx4d_speed_test(aom_sad_4d_avx512_func_ptr_array);
 }
 

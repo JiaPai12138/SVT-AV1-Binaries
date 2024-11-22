@@ -9,21 +9,26 @@
 # PATENTS file, you can obtain it at https://www.aomedia.org/license/patent-license.
 #
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 
 if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
     message(WARNING "Building in-source is highly not recommended\n"
                     "Please use the Build folder or create your own.")
 endif()
 
-project(svt-av1 VERSION 1.0.0
+project(svt-av1 VERSION 2.3.0
     LANGUAGES C CXX)
+
+set(VERSION_TAG "")
 
 if(POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
 endif()
 if(POLICY CMP0069)
     cmake_policy(SET CMP0069 NEW)
+endif()
+if(POLICY CMP0077)
+    cmake_policy(SET CMP0077 NEW)
 endif()
 
 
@@ -38,6 +43,11 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 option(COMPILE_C_ONLY "Compile only C code with no simds (autodetect, default off for x86)" OFF)
+option(USE_EXTERNAL_CPUINFO "Consume system cpuinfo library only" OFF)
+
+if(USE_EXTERNAL_CPUINFO)
+    find_package(cpuinfo CONFIG REQUIRED)
+endif()
 
 include(CheckCSourceCompiles)
 
@@ -49,15 +59,24 @@ check_c_source_compiles("
 int main(void) {}
 " HAVE_X86_PLATFORM)
 
+check_c_source_compiles("
+#if defined(__aarch64__) || defined(_M_ARM64)
+#else
+#error \"Non-arm64\"
+#endif
+int main(void) {}
+" HAVE_ARM_PLATFORM)
+
+option(MINIMAL_BUILD "Enable minimal build" OFF)
+if(MINIMAL_BUILD)
+    add_definitions(-DMINIMAL_BUILD=1)
+endif()
+
 if(NOT COMPILE_C_ONLY AND HAVE_X86_PLATFORM)
-    find_program(YASM_EXE yasm)
-    option(ENABLE_NASM "Use nasm if available (Uses yasm by default if found)" OFF)
-    if(YASM_EXE AND NOT CMAKE_ASM_NASM_COMPILER MATCHES "yasm" AND NOT ENABLE_NASM)
-        set(CMAKE_ASM_NASM_COMPILER "${YASM_EXE}" CACHE FILEPATH "Path to nasm compatible compiler" FORCE)
-    else()
+    include(CheckLanguage)
+    check_language(ASM_NASM)
+    if(CMAKE_ASM_NASM_COMPILER MATCHES "nasm")
         set(NASM_VERSION "0.0.0")
-        include(CheckLanguage)
-        check_language(ASM_NASM)
         execute_process(COMMAND ${CMAKE_ASM_NASM_COMPILER} -v
             OUTPUT_VARIABLE NASM_VERSION
             ERROR_QUIET
@@ -65,12 +84,99 @@ if(NOT COMPILE_C_ONLY AND HAVE_X86_PLATFORM)
         string(REGEX MATCH "([.0-9])+" NASM_VERSION "${NASM_VERSION}")
         # NASM_VERSION should now contain something like 2.14.02
         # Needs to error out on a version less than 2.14
-        if(NASM_VERSION VERSION_LESS "2.14" AND CMAKE_ASM_NASM_COMPILER MATCHES "nasm")
-            message(FATAL_ERROR "Found nasm is too old (requires at least 2.14, found ${NASM_VERSION})!")
+        if(NASM_VERSION VERSION_LESS "2.14")
+            find_program(YASM_EXE yasm)
+            if(YASM_EXE)
+                set(CMAKE_ASM_NASM_COMPILER ${YASM_EXE})
+                message(STATUS "Found nasm is too old (requires at least 2.14, found ${NASM_VERSION}), using yasm instead")
+            else()
+                message(FATAL_ERROR "Found nasm is too old (requires at least 2.14, found ${NASM_VERSION})!")
+            endif()
         endif()
     endif()
     enable_language(ASM_NASM)
     add_definitions(-DARCH_X86_64=1)
+elseif(NOT COMPILE_C_ONLY AND HAVE_ARM_PLATFORM)
+    set(ARM64_FLAVORS "NEON;ARM_CRC32;NEON_DOTPROD;NEON_I8MM;SVE;SVE2")
+    set(ARM_CRC32_DEFAULT_FLAG "-march=armv8-a+crc")
+    set(NEON_DOTPROD_DEFAULT_FLAG "-march=armv8.2-a+dotprod")
+    set(NEON_I8MM_DEFAULT_FLAG "-march=armv8.2-a+dotprod+i8mm")
+    set(SVE_DEFAULT_FLAG "-march=armv8.2-a+dotprod+i8mm+sve")
+    set(SVE2_DEFAULT_FLAG "-march=armv9-a+i8mm+sve2") # SVE2 is a v9-only feature
+
+    option(ENABLE_NEON "Enables Neon optimizations on AArch64 targets." ON)
+    option(ENABLE_ARM_CRC32 "Enables Arm CRC32 optimizations." ON)
+    option(ENABLE_NEON_DOTPROD
+      "Enables Armv8.2-A Neon DotProd optimizations on AArch64 targets." ON)
+    option(ENABLE_NEON_I8MM
+      "Enables Armv8.2-A Neon I8MM optimizations on AArch64 targets." ON)
+    option(ENABLE_SVE "Enables Armv8.2-A SVE optimizations on AArch64 targets." ON)
+    option(ENABLE_SVE2 "Enables Armv9-A SVE2 optimizations on AArch64 targets." ON)
+
+    # Check that the compiler flag to enable each flavor is supported by the
+    # compiler. This may not be the case for new architecture features on old
+    # compiler versions.
+    set(C_MAIN "\nint main(void) { return 0; }")
+    foreach(flavor ${ARM64_FLAVORS})
+        if(ENABLE_${flavor} AND NOT DEFINED ${flavor}_FLAG)
+            set(${flavor}_FLAG "${${flavor}_DEFAULT_FLAG}")
+
+            # Do not use check_c_compiler_flag here since the regex used to match
+            # against stderr does not recognise the "invalid feature modifier" error
+            # produced by certain versions of GCC, leading to the feature being
+            # incorrectly marked as available.
+            set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+            set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${${flavor}_FLAG}")
+            unset(${flavor}_FLAG_SUPPORTED)
+            check_c_source_compiles("static void function(void) {} ${C_MAIN}" ${flavor}_FLAG_SUPPORTED)
+            set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+
+            if(NOT ${flavor}_FLAG_SUPPORTED)
+              set(ENABLE_${flavor} 0)
+            endif()
+        endif()
+    endforeach()
+
+    # SVE and SVE2 require that the Neon-SVE bridge header is also available.
+    if(ENABLE_SVE OR ENABLE_SVE2)
+        set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+        set(OLD_CMAKE_TRY_COMPILE_TARGET_TYPE ${CMAKE_TRY_COMPILE_TARGET_TYPE})
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${SVE_FLAG}")
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+        check_c_source_compiles("
+#ifndef __ARM_NEON_SVE_BRIDGE
+#error 1
+#endif
+#include <arm_sve.h>
+#include <arm_neon_sve_bridge.h>" HAVE_SVE_HEADERS)
+        # Check whether the compiler can compile SVE functions that require
+        # backup/restore of SVE registers according to AAPCS. Clang for Windows used
+        # to fail this, see https://github.com/llvm/llvm-project/issues/80009.
+        check_c_source_compiles("
+#include <arm_sve.h>
+void other(void);
+svfloat32_t func(svfloat32_t a) {
+  other();
+  return a;
+} ${C_MAIN}" CAN_COMPILE_SVE)
+        set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE ${OLD_CMAKE_TRY_COMPILE_TARGET_TYPE})
+        if(NOT HAVE_SVE_HEADERS OR NOT CAN_COMPILE_SVE)
+            set(ENABLE_SVE 0)
+            set(ENABLE_SVE2 0)
+        endif()
+    endif()
+
+    foreach(flavor ${ARM64_FLAVORS})
+        if(ENABLE_${flavor})
+            add_compile_definitions(HAVE_${flavor}=1)
+        else()
+            add_compile_definitions(HAVE_${flavor}=0)
+        endif()
+    endforeach()
+
+    add_definitions(-DARCH_AARCH64=1)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-lax-vector-conversions")
 endif()
 
 include(GNUInstallDirs)
@@ -139,14 +245,16 @@ if(MSVC AND SVT_AV1_PGO)
     unset(SVT_AV1_PGO CACHE)
 endif()
 
-option(BUILD_APPS "Build Enc and Dec Apps" ON)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND SVT_AV1_PGO)
+    find_program(LLVM_PROFDATA llvm-profdata)
+    if(NOT LLVM_PROFDATA)
+        message(FATAL_ERROR "llvm-profdata not found.")
+    endif()
+endif()
+
+option(BUILD_APPS "Build Enc Apps" ON)
 option(EXCLUDE_HASH "Disables the use of the git hash in the build to produce hash exact binaries, implies REPRODUCIBLE_BUILDS")
 option(REPRODUCIBLE_BUILDS "Disable use of certain C macros to always generate reproducable builds" ${EXCLUDE_HASH})
-option(BUILD_ENC "Build Encoder lib and app" ON)
-option(BUILD_DEC "Build Decoder lib and app" ON)
-if(NOT BUILD_ENC AND NOT BUILD_DEC)
-    message(FATAL_ERROR "Not building either the encoder and decoder doesn't make sense.")
-endif()
 if(SVT_AV1_PGO AND NOT BUILD_APPS)
     message(FATAL_ERROR "Can't use pgo and not build the apps")
 endif()
@@ -156,16 +264,21 @@ if(SVT_INTERNAL_PGO_USE)
         set(PGO_COMPILER_FLAGS "/GL")
         set(PGO_LINKER_FLAGS "/LTCG /USEPROFILE")
     else()
-        set(PGO_COMPILER_FLAGS "-fprofile-use=${SVT_AV1_PGO_DIR} -fprofile-correction")
-        set(PGO_LINKER_FLAGS "-fprofile-use=${SVT_AV1_PGO_DIR} -fprofile-correction")
+        set(PGO_COMPILER_FLAGS "-fprofile-use=${SVT_AV1_PGO_DIR}")
+        set(PGO_LINKER_FLAGS "-fprofile-use=${SVT_AV1_PGO_DIR}")
+        if (CMAKE_C_COMPILER_ID STREQUAL "GNU") # GCC
+            # We want unprofiled code optimised for speed, not size, so we mark the profiling data as "partial".
+            set(PGO_COMPILER_FLAGS "${PGO_COMPILER_FLAGS} -fprofile-correction -fprofile-partial-training")
+            set(PGO_LINKER_FLAGS "${PGO_LINKER_FLAGS} -fprofile-correction -fprofile-partial-training")
+        endif()
     endif()
 elseif(SVT_INTERNAL_PGO_GENERATE)
     if(MSVC)
         set(PGO_COMPILER_FLAGS "/GL")
         set(PGO_LINKER_FLAGS "/LTCG /GENPROFILE")
     else()
-        set(PGO_COMPILER_FLAGS "-fprofile-generate=${SVT_AV1_PGO_DIR} -fprofile-correction")
-        set(PGO_LINKER_FLAGS "-fprofile-generate=${SVT_AV1_PGO_DIR} -fprofile-correction")
+        set(PGO_COMPILER_FLAGS "-fprofile-generate=${SVT_AV1_PGO_DIR}")
+        set(PGO_LINKER_FLAGS "-fprofile-generate=${SVT_AV1_PGO_DIR}")
     endif()
 endif()
 
@@ -200,12 +313,14 @@ endif()
 if(UNIX)
     if(APPLE)
         set(CMAKE_MACOSX_RPATH 1)
-        set(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
-        set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
-        set(CMAKE_C_ARCHIVE_FINISH   "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
-        set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+        if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+            set(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+            set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+            set(CMAKE_C_ARCHIVE_FINISH   "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+            set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+        endif()
     else()
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -z noexecstack -z relro -z now")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -z noexecstack -z relro -z now")
     endif()
 endif()
 
@@ -216,9 +331,7 @@ function(check_flag lang flag)
     string(REGEX REPLACE "[^A-Za-z0-9]" "_" flag_var "${flag}")
     if(NOT DEFINED ${lang}_FLAG${flag_var})
         execute_process(COMMAND ${CMAKE_COMMAND} -E echo_append "-- Checking ${lang} flag support for: [${flag}] - ")
-        if(NOT MSVC AND CLANG)
-            set(STORE_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-            set(STORE_CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang")
             set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=unused-command-line-argument")
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=unused-command-line-argument")
         endif()
@@ -226,10 +339,6 @@ function(check_flag lang flag)
             check_cxx_compiler_flag("${flag}" "${lang}_FLAG${flag_var}")
         else()
             check_c_compiler_flag("${flag}" "${lang}_FLAG${flag_var}")
-        endif()
-        if(NOT MSVC AND CLANG)
-            set(CMAKE_C_FLAGS "${STORE_CMAKE_C_FLAGS}")
-            set(CMAKE_CXX_FLAGS "${STORE_CMAKE_CXX_FLAGS}")
         endif()
         if(${lang}_FLAG${flag_var})
             execute_process(COMMAND ${CMAKE_COMMAND} -E echo "Yes")
@@ -287,21 +396,17 @@ macro(add_clike_and_ld_flags)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${add_clike_and_ld_flags}")
 endmacro()
 
-
-option(SVT_AV1_LTO "Attempt to enable Link Time Optimization if available" OFF)
+if((CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "9.0") OR
+   (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "12.0"))
+    option(SVT_AV1_LTO "Attempt to enable Link Time Optimization if available" ON)
+else()
+    option(SVT_AV1_LTO "Attempt to enable Link Time Optimization if available" OFF)
+endif()
 if(SVT_AV1_LTO)
-    if(CMAKE_VERSION GREATER_EQUAL 3.9)
-        include(CheckIPOSupported)
-        check_ipo_supported(RESULT svt_av1_ipo_supported)
-        if(svt_av1_ipo_supported AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
-            set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-        endif()
-    else()
-        if(MSVC)
-            add_clike_and_ld_flags(/LTCG:INCREMENTAL)
-        else()
-            add_clike_and_ld_flags(-flto)
-        endif()
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT svt_av1_ipo_supported)
+    if(svt_av1_ipo_supported AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
     endif()
 endif()
 
@@ -318,7 +423,7 @@ else()
         check_both_flags_add(-march=native)
     endif()
     if(MINGW)
-        check_both_flags_add(-mxsave -fno-asynchronous-unwind-tables)
+        check_flags_add(C -mxsave -fno-asynchronous-unwind-tables)
     else()
         check_both_flags_add(-fstack-protector-strong)
         check_both_flags_add(PREPEND -fno-stack-clash-protection)
@@ -343,10 +448,15 @@ elseif(CMAKE_ASM_NASM_COMPILER MATCHES "yasm")
 endif()
 
 include(CheckSymbolExists)
+include(CheckCCompilerFlag)
+if(MSVC)
+check_c_compiler_flag("/arch:AVX512" HAS_AVX512)
+else()
+check_c_compiler_flag("-mavx512f" HAS_AVX512)
+endif()
 
-check_symbol_exists("_mm512_extracti64x4_epi64" "immintrin.h" HAS_AVX512)
 if(HAS_AVX512)
-    option(ENABLE_AVX512 "Enable building avx512 code" OFF)
+    option(ENABLE_AVX512 "Enable building avx512 code" ON)
 else()
     set(ENABLE_AVX512 OFF CACHE INTERNAL "Enable building avx512 code")
 endif()
@@ -389,7 +499,6 @@ macro(ASM_COMPILE_TO_TARGET target)
                     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR})
             list(APPEND SIMD_OBJS "${SIMD_OBJ}")
         endforeach()
-        #target_sources(${target} PUBLIC ${SIMD_OBJS})
         target_sources(common_lib INTERFACE ${SIMD_OBJS})
     else()
         # For every other generator
@@ -426,11 +535,62 @@ if(NOT HAVE_STRCPY_S OR NOT HAVE_STRNCPY_S OR NOT HAVE_STRNLEN_S)
         $<$<NOT:$<BOOL:${HAVE_STRCPY_S}>>:third_party/safestringlib/strcpy_s.c>)
 endif()
 
+# Try to find valgrind.h for the RUNNING_ON_VALGRIND macro
+# needed for now for svt_dav1d_inv_txfm_add_dct_dct_32x16_8bpc_avx2
+# due to the later crashing libVEX when running on valgrind
+# TODO: remove this once the issue is fixed
+include(CheckIncludeFile)
+check_include_file("valgrind/valgrind.h" HAVE_VALGRIND_H)
+if(HAVE_VALGRIND_H)
+    set_property(DIRECTORY .
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS
+            HAVE_VALGRIND_H=1)
+else()
+    set_property(DIRECTORY .
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS
+            HAVE_VALGRIND_H=0)
+endif()
+
+# try to see if __builtin_expect is available
+check_c_source_compiles("
+    int main() {
+        if (__builtin_expect(1, 0)) {
+            return 1;
+        }
+        return 0;
+    }" HAVE_BUILTIN_EXPECT)
+if(HAVE_BUILTIN_EXPECT)
+    set_property(DIRECTORY .
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS
+            HAVE_BUILTIN_EXPECT=1)
+else()
+    set_property(DIRECTORY .
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS
+            HAVE_BUILTIN_EXPECT=0)
+endif()
+
 include_directories(.)
 
 # Find out if we have threading available
 set(CMAKE_THREAD_PREFER_PTHREADS ON)
 find_package(Threads)
+
+check_symbol_exists(elf_aux_info "sys/auxv.h" HAVE_ELF_AUX_INFO)
+if(HAVE_ELF_AUX_INFO)
+    set_property(DIRECTORY .
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS
+            HAVE_ELF_AUX_INFO=1)
+else()
+    set_property(DIRECTORY .
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS
+            HAVE_ELF_AUX_INFO=0)
+endif()
 
 string(TOLOWER "${SANITIZER}" SANITIZER)
 
@@ -446,7 +606,8 @@ elseif(SANITIZER STREQUAL "undefined")
 elseif(SANITIZER STREQUAL "integer")
     add_clike_and_ld_flags(-fsanitize=integer)
 elseif(SANITIZER)
-    message(FATAL_ERROR "Unknown sanitizer: ${SANITIZER}")
+    message(WARNING "Unknown sanitizer: ${SANITIZER}, going to try adding it anyway")
+    add_clike_and_ld_flags(-fsanitize=${SANITIZER})
 endif()
 
 if(SANITIZER)
@@ -457,22 +618,22 @@ if(COVERAGE)
     add_clike_and_ld_flags(--coverage)
 endif()
 
+set(SVT_AV1_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}")
+set(SVT_AV1_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
+
+if(NOT IS_ABSOLUTE "${SVT_AV1_INCLUDEDIR}")
+    string(PREPEND SVT_AV1_INCLUDEDIR "\${prefix}/")
+endif()
+if(NOT IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+    string(PREPEND SVT_AV1_LIBDIR "\${exec_prefix}/")
+endif()
+
 # Add Subdirectories
-add_subdirectory(Source/Lib/Common)
-if(BUILD_ENC)
-    add_subdirectory(Source/Lib/Encoder)
-endif()
-if(BUILD_DEC)
-    add_subdirectory(Source/Lib/Decoder)
-endif()
-if(BUILD_APPS AND BUILD_ENC)
-    add_subdirectory(Source/App/EncApp)
-endif()
-if(BUILD_APPS AND BUILD_DEC)
-    add_subdirectory(Source/App/DecApp)
+add_subdirectory(Source/Lib)
+if(BUILD_APPS)
+    add_subdirectory(Source/App)
 endif()
 if(SVT_AV1_PGO)
-    set_target_properties(SvtAv1EncApp SvtAv1DecApp PROPERTIES EXCLUDE_FROM_ALL TRUE)
     string(REPLACE ";" "::" SVT_AV1_PGO_CUSTOM_VIDEOS "${SVT_AV1_PGO_CUSTOM_VIDEOS}")
 
     add_custom_target(PGOCompileGen
@@ -480,25 +641,30 @@ if(SVT_AV1_PGO)
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
         --clean-first
         --target SvtAv1EncApp
-        --target SvtAv1DecApp
         COMMENT "Compiling with PGO generate"
-        DEPENDS SvtAv1EncApp SvtAv1DecApp)
-    add_custom_target(PGOCompileGenUse
-        ${CMAKE_COMMAND} ${CMAKE_BINARY_DIR} -DSVT_INTERNAL_PGO_GENERATE=ON -DSVT_INTERNAL_PGO_USE=ON
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-        --clean-first
-        --target SvtAv1EncApp
-        --target SvtAv1DecApp
-        COMMENT "Compiling PGO gen+use"
-        DEPENDS SvtAv1EncApp SvtAv1DecApp)
+        VERBATIM
+        USES_TERMINAL
+    )
+
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        # We want unprofiled code optimised for speed, not size, so we mark the profiling data as "sparse".
+        set(PROFILE_MERGE_CMD sh -c "${LLVM_PROFDATA} merge --sparse=true *.profraw -o default.profdata")
+    else()
+        # Do nothing. GCC has no profile merging step.
+        set(PROFILE_MERGE_CMD)
+    endif()
+
     add_custom_target(PGOCompileUse
         ${CMAKE_COMMAND} ${CMAKE_BINARY_DIR} -DSVT_INTERNAL_PGO_GENERATE=OFF -DSVT_INTERNAL_PGO_USE=ON
+        COMMAND ${PROFILE_MERGE_CMD}
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
         --clean-first
         --target SvtAv1EncApp
-        --target SvtAv1DecApp
         COMMENT "Compiling PGO use"
-        DEPENDS SvtAv1EncApp SvtAv1DecApp)
+        COMMAND_EXPAND_LISTS
+        VERBATIM
+        USES_TERMINAL
+    )
 
     if(SVT_AV1_PGO_CUSTOM_VIDEOS)
         add_custom_target(PGOGenerateProfile ${CMAKE_COMMAND} -P
@@ -506,31 +672,38 @@ if(SVT_AV1_PGO)
             ${CMAKE_BINARY_DIR}
             ${SVT_AV1_PGO_CUSTOM_VIDEOS}
             $<TARGET_FILE:SvtAv1EncApp>
-            $<TARGET_FILE:SvtAv1DecApp>
-            COMMENT "Generating PGO profile")
+            COMMENT "Generating PGO profile"
+            VERBATIM
+            USES_TERMINAL
+        )
     else()
         add_custom_target(DownloadObjOneFast ${CMAKE_COMMAND} -P
             ${PROJECT_SOURCE_DIR}/Build/obj1fastdownloader.cmake
             ${CMAKE_BINARY_DIR}
-            COMMENT "Downloading objective-1-fast")
+            COMMENT "Downloading video file"
+            VERBATIM
+            USES_TERMINAL
+        )
         add_custom_target(PGOGenerateProfile ${CMAKE_COMMAND} -P
             ${PROJECT_SOURCE_DIR}/Build/pgohelper.cmake
             ${CMAKE_BINARY_DIR}
             ${CMAKE_BINARY_DIR}/objective-1-fast
             $<TARGET_FILE:SvtAv1EncApp>
-            $<TARGET_FILE:SvtAv1DecApp>
             COMMENT "Generating PGO profile"
-            DEPENDS DownloadObjOneFast)
+            DEPENDS DownloadObjOneFast
+            VERBATIM
+            USES_TERMINAL
+        )
     endif()
 
-    add_custom_target(RunPGO ALL
+    add_custom_target(RunPGO
         ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --config $<CONFIG> --target PGOCompileGen
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --config $<CONFIG> --target PGOGenerateProfile
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --config $<CONFIG> --target PGOCompileGenUse
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --config $<CONFIG> --target PGOGenerateProfile
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --config $<CONFIG> --target PGOCompileUse
         COMMENT "Compiling PGO Binary"
-        DEPENDS PGOCompileUse)
+        VERBATIM
+        USES_TERMINAL
+    )
 endif()
 
 if(BUILD_TESTING)
@@ -542,7 +715,7 @@ endif()
 
 add_subdirectory(third_party/fastfeat)
 
-if(NOT COMPILE_C_ONLY AND HAVE_X86_PLATFORM)
+if(NOT USE_EXTERNAL_CPUINFO AND NOT COMPILE_C_ONLY AND HAVE_X86_PLATFORM)
     add_subdirectory(third_party/cpuinfo)
 endif()
 

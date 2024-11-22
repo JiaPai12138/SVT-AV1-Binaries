@@ -30,6 +30,7 @@ typedef enum EbAv1MetadataType {
     EB_AV1_METADATA_TYPE_SCALABILITY    = 3,
     EB_AV1_METADATA_TYPE_ITUT_T35       = 4,
     EB_AV1_METADATA_TYPE_TIMECODE       = 5,
+    EB_AV1_METADATA_TYPE_FRAME_SIZE     = 6,
 } EbAv1MetadataType;
 
 /*!\brief Metadata payload. */
@@ -44,6 +45,17 @@ typedef struct SvtMetadataArray {
     size_t         sz; /* Number of metadata structs in the list */
     SvtMetadataT **metadata_array; /* Array of metadata structs */
 } SvtMetadataArrayT;
+
+/*!\brief Frame size struct in metadata. */
+typedef struct SvtMetadataFrameSize {
+    uint16_t width; /**< pixel width of frame */
+    uint16_t height; /**< pixel height of frame */
+    uint16_t disp_width; /**< display pixel width of frame */
+    uint16_t disp_height; /**< display pixel height of frame */
+    uint16_t stride; /**< pixel stride of frame */
+    uint16_t subsampling_x; /**< subsampling of Cb/Cr in width */
+    uint16_t subsampling_y; /**< subsampling of Cb/Cr in height */
+} SvtMetadataFrameSizeT;
 
 /*!\brief Allocate memory for SvtMetadataT struct.
  *
@@ -101,8 +113,8 @@ EB_API void svt_metadata_array_free(void *arr);
  * \return Returns 0 on success. If buffer or data is NULL, sz is 0, or memory
  * allocation fails, it returns -1.
  */
-EB_API int svt_add_metadata(struct EbBufferHeaderType *buffer, const uint32_t type,
-                            const uint8_t *data, const size_t sz);
+EB_API int svt_add_metadata(struct EbBufferHeaderType *buffer, const uint32_t type, const uint8_t *data,
+                            const size_t sz);
 
 /*!\brief Return metadata size.
  *
@@ -123,8 +135,7 @@ EB_API size_t svt_metadata_size(SvtMetadataArrayT *metadata, const EbAv1Metadata
  *
  * \return Returns 1 on success. 0 on failure.
  */
-EB_API int svt_aom_parse_mastering_display(struct EbSvtAv1MasteringDisplayInfo *mdi,
-                                           const char                          *md_str);
+EB_API int svt_aom_parse_mastering_display(struct EbSvtAv1MasteringDisplayInfo *mdi, const char *md_str);
 
 /*!\brief Parse string into EbContentLightLevel struct.
  *

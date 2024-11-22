@@ -22,20 +22,12 @@
  ******************************************************************************/
 
 #include "gtest/gtest.h"
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
 #include "aom_dsp_rtcd.h"
 #include "convolve.h"
-#include "EbDefinitions.h"
-#include "EbRestoration.h"
-#include "EbTime.h"
-#include "EbUtility.h"
+#include "definitions.h"
+#include "restoration.h"
+#include "svt_time.h"
+#include "utility.h"
 #include "random.h"
 #include "util.h"
 
@@ -90,19 +82,6 @@ static const BlkSize test_block_size_table[] = {
     BlkSize(8, 9),   BlkSize(8, 8)};
 
 static const int test_tap_table[] = {7, 5, 3};
-
-static const WienerConvolveFunc wiener_convolve_func_table[] = {
-    svt_av1_wiener_convolve_add_src_sse2,
-    svt_av1_wiener_convolve_add_src_avx2,
-#if EN_AVX512_SUPPORT
-    svt_av1_wiener_convolve_add_src_avx512
-#endif
-};
-
-static const HbdWienerConvolveFunc hbd_wiener_convolve_func_table[] = {
-    svt_av1_highbd_wiener_convolve_add_src_ssse3,
-    svt_av1_highbd_wiener_convolve_add_src_avx2,
-};
 
 template <typename Sample, typename FuncType, typename ParamType>
 class AV1WienerConvolveTest : public ::testing::TestWithParam<ParamType> {
@@ -472,6 +451,7 @@ class AV1WienerConvolveHbdTest
         (void)tap;
     }
 };
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(AV1WienerConvolveHbdTest);
 
 TEST_P(AV1WienerConvolveLbdTest, random_test) {
     run_random_test(1000);
@@ -481,10 +461,35 @@ TEST_P(AV1WienerConvolveLbdTest, DISABLED_speed_test) {
     run_speed_test();
 }
 
-INSTANTIATE_TEST_CASE_P(
-    AV1, AV1WienerConvolveLbdTest,
-    ::testing::Combine(::testing::ValuesIn(test_block_size_table),
-                       ::testing::ValuesIn(wiener_convolve_func_table)));
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
+    SSE2, AV1WienerConvolveLbdTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(test_block_size_table),
+        ::testing::Values(svt_av1_wiener_convolve_add_src_sse2)));
+
+INSTANTIATE_TEST_SUITE_P(
+    AVX2, AV1WienerConvolveLbdTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(test_block_size_table),
+        ::testing::Values(svt_av1_wiener_convolve_add_src_avx2)));
+
+#if EN_AVX512_SUPPORT
+INSTANTIATE_TEST_SUITE_P(
+    AVX512, AV1WienerConvolveLbdTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(test_block_size_table),
+        ::testing::Values(svt_av1_wiener_convolve_add_src_avx512)));
+#endif
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    NEON, AV1WienerConvolveLbdTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(test_block_size_table),
+        ::testing::Values(svt_av1_wiener_convolve_add_src_neon)));
+#endif  // ARCH_AARCH64
 
 TEST_P(AV1WienerConvolveHbdTest, random_test) {
     run_random_test(1000);
@@ -494,10 +499,20 @@ TEST_P(AV1WienerConvolveHbdTest, DISABLED_speed_test) {
     run_speed_test();
 }
 
-INSTANTIATE_TEST_CASE_P(
-    AV1, AV1WienerConvolveHbdTest,
-    ::testing::Combine(::testing::ValuesIn(test_block_size_table),
-                       ::testing::ValuesIn(hbd_wiener_convolve_func_table),
-                       testing::Values(8, 10, 12)));
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
+    SSSE3, AV1WienerConvolveHbdTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(test_block_size_table),
+        ::testing::Values(svt_av1_highbd_wiener_convolve_add_src_ssse3),
+        testing::Values(8, 10, 12)));
+
+INSTANTIATE_TEST_SUITE_P(
+    AVX2, AV1WienerConvolveHbdTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(test_block_size_table),
+        ::testing::Values(svt_av1_highbd_wiener_convolve_add_src_avx2),
+        testing::Values(8, 10, 12)));
+#endif  // ARCH_X86_64
 
 }  // namespace

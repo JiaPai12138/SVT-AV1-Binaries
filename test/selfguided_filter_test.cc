@@ -15,11 +15,11 @@
 #include "gtest/gtest.h"
 #include "acm_random.h"
 #include "aom_dsp_rtcd.h"
-#include "EbDefinitions.h"
-#include "EbRestoration.h"
-#include "EbRestorationPick.h"
-#include "EbUnitTestUtility.h"
-#include "EbUtility.h"
+#include "definitions.h"
+#include "restoration.h"
+#include "restoration_pick.h"
+#include "unit_test_utility.h"
+#include "utility.h"
 #include "util.h"
 
 namespace {
@@ -252,13 +252,25 @@ TEST_P(AV1SelfguidedFilterTest, CorrectnessTest) {
     RunCorrectnessTest();
 }
 
-INSTANTIATE_TEST_CASE_P(
+#ifdef ARCH_X86_64
+
+INSTANTIATE_TEST_SUITE_P(
     SSE4_1, AV1SelfguidedFilterTest,
     ::testing::Values(make_tuple(svt_apply_selfguided_restoration_sse4_1)));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AVX2, AV1SelfguidedFilterTest,
     ::testing::Values(make_tuple(svt_apply_selfguided_restoration_avx2)));
+
+#endif /* ARCH_X86_64 */
+
+#ifdef ARCH_AARCH64
+
+INSTANTIATE_TEST_SUITE_P(
+    NEON, AV1SelfguidedFilterTest,
+    ::testing::Values(make_tuple(svt_aom_apply_selfguided_restoration_neon)));
+
+#endif /* ARCH_AARCH64 */
 
 // Test parameter list:
 //  <tst_fun_, bit_depth>
@@ -478,6 +490,7 @@ class AV1HighbdSelfguidedFilterTest
   private:
     SgrFunc tst_fun_;
 };
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(AV1HighbdSelfguidedFilterTest);
 
 TEST_P(AV1HighbdSelfguidedFilterTest, DISABLED_SpeedTest) {
     RunSpeedTest();
@@ -486,16 +499,20 @@ TEST_P(AV1HighbdSelfguidedFilterTest, CorrectnessTest) {
     RunCorrectnessTest();
 }
 
+#ifdef ARCH_X86_64
+
 const int32_t highbd_params_avx2[] = {8, 10, 12};
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SSE4_1, AV1HighbdSelfguidedFilterTest,
     ::testing::Combine(
         ::testing::Values(svt_apply_selfguided_restoration_sse4_1),
         ::testing::ValuesIn(highbd_params_avx2)));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AVX2, AV1HighbdSelfguidedFilterTest,
     ::testing::Combine(::testing::Values(svt_apply_selfguided_restoration_avx2),
                        ::testing::ValuesIn(highbd_params_avx2)));
+
+#endif /* ARCH_X86_64 */
 
 }  // namespace

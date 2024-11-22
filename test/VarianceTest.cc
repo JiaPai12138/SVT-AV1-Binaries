@@ -26,19 +26,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <new>
-// workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
+
 #include "aom_dsp_rtcd.h"
 #include "random.h"
 #include "util.h"
 #include "gtest/gtest.h"
-#include "EbUtility.h"
+#include "utility.h"
 
 using svt_av1_test_tool::SVTRandom;  // to generate the random
 namespace {
@@ -103,9 +96,12 @@ class MseTest : public ::testing::TestWithParam<TestMseParam> {
             }
 
             uint32_t sse_tst, sse_ref;
-            mse_tst_(src_data_, width_, ref_data_, height_, &sse_tst);
-            mse_ref_(src_data_, width_, ref_data_, height_, &sse_ref);
+            unsigned int res_tst =
+                mse_tst_(src_data_, width_, ref_data_, height_, &sse_tst);
+            unsigned int res_ref =
+                mse_ref_(src_data_, width_, ref_data_, height_, &sse_ref);
             ASSERT_EQ(sse_tst, sse_ref) << "SSE Error at index: " << i;
+            ASSERT_EQ(res_tst, res_ref) << "Return value error at index: " << i;
         }
     }
 
@@ -113,9 +109,12 @@ class MseTest : public ::testing::TestWithParam<TestMseParam> {
         memset(src_data_, 255, MAX_BLOCK_SIZE);
         memset(ref_data_, 0, MAX_BLOCK_SIZE);
         uint32_t sse_tst;
-        mse_tst_(src_data_, width_, ref_data_, width_, &sse_tst);
+        unsigned int res_tst =
+            mse_tst_(src_data_, width_, ref_data_, width_, &sse_tst);
         const uint32_t expected = width_ * height_ * 255 * 255;
         ASSERT_EQ(sse_tst, expected) << "Error at MSE maximum test ";
+        ASSERT_EQ(res_tst, expected)
+            << "Return value error at MSE maximum test";
     }
 
   private:
@@ -126,6 +125,7 @@ class MseTest : public ::testing::TestWithParam<TestMseParam> {
     MSE_NXM_FUNC mse_tst_;
     MSE_NXM_FUNC mse_ref_;
 };
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(MseTest);
 
 TEST_P(MseTest, MatchTest) {
     run_match_test();
@@ -135,11 +135,33 @@ TEST_P(MseTest, MaxTest) {
     run_max_test();
 };
 
-INSTANTIATE_TEST_CASE_P(
-    Variance, MseTest,
-    ::testing::Values(
-        TestMseParam(16, 16, &svt_aom_mse16x16_sse2, &svt_aom_mse16x16_c),
-        TestMseParam(16, 16, &svt_aom_mse16x16_avx2, &svt_aom_mse16x16_c)));
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(SSE2, MseTest,
+                         ::testing::Values(TestMseParam(16, 16,
+                                                        &svt_aom_mse16x16_sse2,
+                                                        &svt_aom_mse16x16_c)));
+
+INSTANTIATE_TEST_SUITE_P(AVX2, MseTest,
+                         ::testing::Values(TestMseParam(16, 16,
+                                                        &svt_aom_mse16x16_avx2,
+                                                        &svt_aom_mse16x16_c)));
+
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(NEON, MseTest,
+                         ::testing::Values(TestMseParam(16, 16,
+                                                        &svt_aom_mse16x16_neon,
+                                                        &svt_aom_mse16x16_c)));
+
+#if HAVE_NEON_DOTPROD
+INSTANTIATE_TEST_SUITE_P(
+    NEON_DOTPROD, MseTest,
+    ::testing::Values(TestMseParam(16, 16, &svt_aom_mse16x16_neon_dotprod,
+                                   &svt_aom_mse16x16_c)));
+#endif  // HAVE_NEON_DOTPROD
+
+#endif  // ARCH_AARCH64
 
 class MseTestHighbd : public ::testing::TestWithParam<TestMseParamHighbd> {
   public:
@@ -215,6 +237,7 @@ class MseTestHighbd : public ::testing::TestWithParam<TestMseParamHighbd> {
     MSE_HIGHBD_NXM_FUNC mse_tst_;
     MSE_HIGHBD_NXM_FUNC mse_ref_;
 };
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(MseTestHighbd);
 
 TEST_P(MseTestHighbd, MatchTest) {
     run_match_test();
@@ -224,10 +247,28 @@ TEST_P(MseTestHighbd, MaxTest) {
     run_max_test();
 };
 
-INSTANTIATE_TEST_CASE_P(Variance, MseTestHighbd,
-                        ::testing::Values(TestMseParamHighbd(
-                            16, 16, &svt_aom_highbd_8_mse16x16_sse2,
-                            &svt_aom_highbd_8_mse16x16_c)));
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(SSE2, MseTestHighbd,
+                         ::testing::Values(TestMseParamHighbd(
+                             16, 16, &svt_aom_highbd_8_mse16x16_sse2,
+                             &svt_aom_highbd_8_mse16x16_c)));
+
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(NEON, MseTestHighbd,
+                         ::testing::Values(TestMseParamHighbd(
+                             16, 16, &svt_aom_highbd_8_mse16x16_neon,
+                             &svt_aom_highbd_8_mse16x16_c)));
+
+#if HAVE_NEON_DOTPROD
+INSTANTIATE_TEST_SUITE_P(NEON_DOTPROD, MseTestHighbd,
+                         ::testing::Values(TestMseParamHighbd(
+                             16, 16, &svt_aom_highbd_8_mse16x16_neon_dotprod,
+                             &svt_aom_highbd_8_mse16x16_c)));
+#endif  // HAVE_NEON_DOTPROD
+
+#endif  // ARCH_AARCH64
 
 // sum of squares test
 static uint32_t mb_ss_ref(const int16_t *src) {
@@ -287,6 +328,8 @@ class SumSquareTest : public ::testing::TestWithParam<SUM_SQUARE_FUNC> {
         }
     }
 };
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(SumSquareTest);
 
 TEST_P(SumSquareTest, ConstTest) {
     run_const_test();
@@ -407,107 +450,199 @@ TEST_P(VarianceTest, OneQuarterTest) {
     run_one_quarter_test();
 };
 
-INSTANTIATE_TEST_CASE_P(
-    Variance, VarianceTest,
-    ::testing::Values(
-        VarianceParam(4, 4, &svt_aom_variance4x4_c, &svt_aom_variance4x4_sse2),
-        VarianceParam(4, 8, &svt_aom_variance4x8_c, &svt_aom_variance4x8_sse2),
-        VarianceParam(4, 16, &svt_aom_variance4x16_c,
-                      &svt_aom_variance4x16_sse2),
-        VarianceParam(8, 4, &svt_aom_variance8x4_c, &svt_aom_variance8x4_sse2),
-        VarianceParam(8, 8, &svt_aom_variance8x8_c, &svt_aom_variance8x8_sse2),
-        VarianceParam(8, 16, &svt_aom_variance8x16_c,
-                      &svt_aom_variance8x16_sse2),
-        VarianceParam(8, 32, &svt_aom_variance8x32_c,
-                      &svt_aom_variance8x32_sse2),
-        VarianceParam(16, 4, &svt_aom_variance16x4_c,
-                      &svt_aom_variance16x4_avx2),
-        VarianceParam(16, 8, &svt_aom_variance16x8_c,
-                      &svt_aom_variance16x8_avx2),
-        VarianceParam(16, 16, &svt_aom_variance16x16_c,
-                      &svt_aom_variance16x16_avx2),
-        VarianceParam(16, 32, &svt_aom_variance16x32_c,
-                      &svt_aom_variance16x32_avx2),
-        VarianceParam(16, 64, &svt_aom_variance16x64_c,
-                      &svt_aom_variance16x64_avx2),
-        VarianceParam(32, 8, &svt_aom_variance32x8_c,
-                      &svt_aom_variance32x8_avx2),
-        VarianceParam(32, 16, &svt_aom_variance32x16_c,
-                      &svt_aom_variance32x16_avx2),
-        VarianceParam(32, 32, &svt_aom_variance32x32_c,
-                      &svt_aom_variance32x32_avx2),
-        VarianceParam(32, 64, &svt_aom_variance32x64_c,
-                      &svt_aom_variance32x64_avx2),
-        VarianceParam(64, 16, &svt_aom_variance64x16_c,
-                      &svt_aom_variance64x16_avx2),
-        VarianceParam(64, 32, &svt_aom_variance64x32_c,
-                      &svt_aom_variance64x32_avx2),
-        VarianceParam(64, 64, &svt_aom_variance64x64_c,
-                      &svt_aom_variance64x64_avx2),
-        VarianceParam(64, 128, &svt_aom_variance64x128_c,
-                      &svt_aom_variance64x128_avx2),
-        VarianceParam(128, 64, &svt_aom_variance128x64_c,
-                      &svt_aom_variance128x64_avx2),
-        VarianceParam(128, 128, &svt_aom_variance128x128_c,
-                      &svt_aom_variance128x128_avx2)));
+#ifdef ARCH_X86_64
+VarianceParam variance_func_sse2[] = {
+    VarianceParam(4, 4, &svt_aom_variance4x4_c, &svt_aom_variance4x4_sse2),
+    VarianceParam(4, 8, &svt_aom_variance4x8_c, &svt_aom_variance4x8_sse2),
+    VarianceParam(4, 16, &svt_aom_variance4x16_c, &svt_aom_variance4x16_sse2),
+    VarianceParam(8, 4, &svt_aom_variance8x4_c, &svt_aom_variance8x4_sse2),
+    VarianceParam(8, 8, &svt_aom_variance8x8_c, &svt_aom_variance8x8_sse2),
+    VarianceParam(8, 16, &svt_aom_variance8x16_c, &svt_aom_variance8x16_sse2),
+    VarianceParam(8, 32, &svt_aom_variance8x32_c, &svt_aom_variance8x32_sse2),
+    VarianceParam(16, 4, &svt_aom_variance16x4_c, &svt_aom_variance16x4_sse2),
+    VarianceParam(16, 8, &svt_aom_variance16x8_c, &svt_aom_variance16x8_sse2),
+    VarianceParam(16, 16, &svt_aom_variance16x16_c,
+                  &svt_aom_variance16x16_sse2),
+    VarianceParam(16, 32, &svt_aom_variance16x32_c,
+                  &svt_aom_variance16x32_sse2),
+    VarianceParam(16, 64, &svt_aom_variance16x64_c,
+                  &svt_aom_variance16x64_sse2),
+    VarianceParam(32, 8, &svt_aom_variance32x8_c, &svt_aom_variance32x8_sse2),
+    VarianceParam(32, 16, &svt_aom_variance32x16_c,
+                  &svt_aom_variance32x16_sse2),
+    VarianceParam(32, 32, &svt_aom_variance32x32_c,
+                  &svt_aom_variance32x32_sse2),
+    VarianceParam(32, 64, &svt_aom_variance32x64_c,
+                  &svt_aom_variance32x64_sse2),
+    VarianceParam(64, 16, &svt_aom_variance64x16_c,
+                  &svt_aom_variance64x16_sse2),
+    VarianceParam(64, 32, &svt_aom_variance64x32_c,
+                  &svt_aom_variance64x32_sse2),
+    VarianceParam(64, 64, &svt_aom_variance64x64_c,
+                  &svt_aom_variance64x64_sse2),
+    VarianceParam(64, 128, &svt_aom_variance64x128_c,
+                  &svt_aom_variance64x128_sse2),
+    VarianceParam(128, 64, &svt_aom_variance128x64_c,
+                  &svt_aom_variance128x64_sse2),
+    VarianceParam(128, 128, &svt_aom_variance128x128_c,
+                  &svt_aom_variance128x128_sse2)};
 
-INSTANTIATE_TEST_CASE_P(
-    Variance_SSE2, VarianceTest,
-    ::testing::Values(VarianceParam(16, 4, &svt_aom_variance16x4_c,
-                                    &svt_aom_variance16x4_sse2),
-                      VarianceParam(16, 8, &svt_aom_variance16x8_c,
-                                    &svt_aom_variance16x8_sse2),
-                      VarianceParam(16, 16, &svt_aom_variance16x16_c,
-                                    &svt_aom_variance16x16_sse2),
-                      VarianceParam(16, 32, &svt_aom_variance16x32_c,
-                                    &svt_aom_variance16x32_sse2),
-                      VarianceParam(16, 64, &svt_aom_variance16x64_c,
-                                    &svt_aom_variance16x64_sse2),
-                      VarianceParam(32, 8, &svt_aom_variance32x8_c,
-                                    &svt_aom_variance32x8_sse2),
-                      VarianceParam(32, 16, &svt_aom_variance32x16_c,
-                                    &svt_aom_variance32x16_sse2),
-                      VarianceParam(32, 32, &svt_aom_variance32x32_c,
-                                    &svt_aom_variance32x32_sse2),
-                      VarianceParam(32, 64, &svt_aom_variance32x64_c,
-                                    &svt_aom_variance32x64_sse2),
-                      VarianceParam(64, 16, &svt_aom_variance64x16_c,
-                                    &svt_aom_variance64x16_sse2),
-                      VarianceParam(64, 32, &svt_aom_variance64x32_c,
-                                    &svt_aom_variance64x32_sse2),
-                      VarianceParam(64, 64, &svt_aom_variance64x64_c,
-                                    &svt_aom_variance64x64_sse2),
-                      VarianceParam(64, 128, &svt_aom_variance64x128_c,
-                                    &svt_aom_variance64x128_sse2),
-                      VarianceParam(128, 64, &svt_aom_variance128x64_c,
-                                    &svt_aom_variance128x64_sse2),
-                      VarianceParam(128, 128, &svt_aom_variance128x128_c,
-                                    &svt_aom_variance128x128_sse2)));
+VarianceParam variance_func_avx2[] = {
+    VarianceParam(16, 4, &svt_aom_variance16x4_c, &svt_aom_variance16x4_avx2),
+    VarianceParam(16, 8, &svt_aom_variance16x8_c, &svt_aom_variance16x8_avx2),
+    VarianceParam(16, 16, &svt_aom_variance16x16_c,
+                  &svt_aom_variance16x16_avx2),
+    VarianceParam(16, 32, &svt_aom_variance16x32_c,
+                  &svt_aom_variance16x32_avx2),
+    VarianceParam(16, 64, &svt_aom_variance16x64_c,
+                  &svt_aom_variance16x64_avx2),
+    VarianceParam(32, 8, &svt_aom_variance32x8_c, &svt_aom_variance32x8_avx2),
+    VarianceParam(32, 16, &svt_aom_variance32x16_c,
+                  &svt_aom_variance32x16_avx2),
+    VarianceParam(32, 32, &svt_aom_variance32x32_c,
+                  &svt_aom_variance32x32_avx2),
+    VarianceParam(32, 64, &svt_aom_variance32x64_c,
+                  &svt_aom_variance32x64_avx2),
+    VarianceParam(64, 16, &svt_aom_variance64x16_c,
+                  &svt_aom_variance64x16_avx2),
+    VarianceParam(64, 32, &svt_aom_variance64x32_c,
+                  &svt_aom_variance64x32_avx2),
+    VarianceParam(64, 64, &svt_aom_variance64x64_c,
+                  &svt_aom_variance64x64_avx2),
+    VarianceParam(64, 128, &svt_aom_variance64x128_c,
+                  &svt_aom_variance64x128_avx2),
+    VarianceParam(128, 64, &svt_aom_variance128x64_c,
+                  &svt_aom_variance128x64_avx2),
+    VarianceParam(128, 128, &svt_aom_variance128x128_c,
+                  &svt_aom_variance128x128_avx2)};
+
+INSTANTIATE_TEST_SUITE_P(SSE2, VarianceTest,
+                         ::testing::ValuesIn(variance_func_sse2));
+
+INSTANTIATE_TEST_SUITE_P(AVX2, VarianceTest,
+                         ::testing::ValuesIn(variance_func_avx2));
 
 #if EN_AVX512_SUPPORT
-INSTANTIATE_TEST_CASE_P(
-    Variance_AVX512, VarianceTest,
-    ::testing::Values(VarianceParam(32, 8, &svt_aom_variance32x8_c,
-                                    &svt_aom_variance32x8_avx512),
-                      VarianceParam(32, 16, &svt_aom_variance32x16_c,
-                                    &svt_aom_variance32x16_avx512),
-                      VarianceParam(32, 32, &svt_aom_variance32x32_c,
-                                    &svt_aom_variance32x32_avx512),
-                      VarianceParam(32, 64, &svt_aom_variance32x64_c,
-                                    &svt_aom_variance32x64_avx512),
-                      VarianceParam(64, 16, &svt_aom_variance64x16_c,
-                                    &svt_aom_variance64x16_avx512),
-                      VarianceParam(64, 32, &svt_aom_variance64x32_c,
-                                    &svt_aom_variance64x32_avx512),
-                      VarianceParam(64, 64, &svt_aom_variance64x64_c,
-                                    &svt_aom_variance64x64_avx512),
-                      VarianceParam(64, 128, &svt_aom_variance64x128_c,
-                                    &svt_aom_variance64x128_avx512),
-                      VarianceParam(128, 64, &svt_aom_variance128x64_c,
-                                    &svt_aom_variance128x64_avx512),
-                      VarianceParam(128, 128, &svt_aom_variance128x128_c,
-                                    &svt_aom_variance128x128_avx512)));
+VarianceParam variance_func_avx512[] = {
+    VarianceParam(32, 8, &svt_aom_variance32x8_c, &svt_aom_variance32x8_avx512),
+    VarianceParam(32, 16, &svt_aom_variance32x16_c,
+                  &svt_aom_variance32x16_avx512),
+    VarianceParam(32, 32, &svt_aom_variance32x32_c,
+                  &svt_aom_variance32x32_avx512),
+    VarianceParam(32, 64, &svt_aom_variance32x64_c,
+                  &svt_aom_variance32x64_avx512),
+    VarianceParam(64, 16, &svt_aom_variance64x16_c,
+                  &svt_aom_variance64x16_avx512),
+    VarianceParam(64, 32, &svt_aom_variance64x32_c,
+                  &svt_aom_variance64x32_avx512),
+    VarianceParam(64, 64, &svt_aom_variance64x64_c,
+                  &svt_aom_variance64x64_avx512),
+    VarianceParam(64, 128, &svt_aom_variance64x128_c,
+                  &svt_aom_variance64x128_avx512),
+    VarianceParam(128, 64, &svt_aom_variance128x64_c,
+                  &svt_aom_variance128x64_avx512),
+    VarianceParam(128, 128, &svt_aom_variance128x128_c,
+                  &svt_aom_variance128x128_avx512)};
+
+INSTANTIATE_TEST_SUITE_P(AVX512, VarianceTest,
+                         ::testing::ValuesIn(variance_func_avx512));
 #endif
+
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+
+VarianceParam variance_func_neon[] = {
+    VarianceParam(4, 4, &svt_aom_variance4x4_c, &svt_aom_variance4x4_neon),
+    VarianceParam(4, 8, &svt_aom_variance4x8_c, &svt_aom_variance4x8_neon),
+    VarianceParam(4, 16, &svt_aom_variance4x16_c, &svt_aom_variance4x16_neon),
+    VarianceParam(8, 4, &svt_aom_variance8x4_c, &svt_aom_variance8x4_neon),
+    VarianceParam(8, 8, &svt_aom_variance8x8_c, &svt_aom_variance8x8_neon),
+    VarianceParam(8, 16, &svt_aom_variance8x16_c, &svt_aom_variance8x16_neon),
+    VarianceParam(8, 32, &svt_aom_variance8x32_c, &svt_aom_variance8x32_neon),
+    VarianceParam(16, 4, &svt_aom_variance16x4_c, &svt_aom_variance16x4_neon),
+    VarianceParam(16, 8, &svt_aom_variance16x8_c, &svt_aom_variance16x8_neon),
+    VarianceParam(16, 16, &svt_aom_variance16x16_c,
+                  &svt_aom_variance16x16_neon),
+    VarianceParam(16, 32, &svt_aom_variance16x32_c,
+                  &svt_aom_variance16x32_neon),
+    VarianceParam(16, 64, &svt_aom_variance16x64_c,
+                  &svt_aom_variance16x64_neon),
+    VarianceParam(32, 8, &svt_aom_variance32x8_c, &svt_aom_variance32x8_neon),
+    VarianceParam(32, 16, &svt_aom_variance32x16_c,
+                  &svt_aom_variance32x16_neon),
+    VarianceParam(32, 32, &svt_aom_variance32x32_c,
+                  &svt_aom_variance32x32_neon),
+    VarianceParam(32, 64, &svt_aom_variance32x64_c,
+                  &svt_aom_variance32x64_neon),
+    VarianceParam(64, 16, &svt_aom_variance64x16_c,
+                  &svt_aom_variance64x16_neon),
+    VarianceParam(64, 32, &svt_aom_variance64x32_c,
+                  &svt_aom_variance64x32_neon),
+    VarianceParam(64, 64, &svt_aom_variance64x64_c,
+                  &svt_aom_variance64x64_neon),
+    VarianceParam(64, 128, &svt_aom_variance64x128_c,
+                  &svt_aom_variance64x128_neon),
+    VarianceParam(128, 64, &svt_aom_variance128x64_c,
+                  &svt_aom_variance128x64_neon),
+    VarianceParam(128, 128, &svt_aom_variance128x128_c,
+                  &svt_aom_variance128x128_neon)};
+
+INSTANTIATE_TEST_SUITE_P(NEON, VarianceTest,
+                         ::testing::ValuesIn(variance_func_neon));
+
+#if HAVE_NEON_DOTPROD
+VarianceParam variance_func_neon_dotprod[] = {
+    VarianceParam(4, 4, &svt_aom_variance4x4_c,
+                  &svt_aom_variance4x4_neon_dotprod),
+    VarianceParam(4, 8, &svt_aom_variance4x8_c,
+                  &svt_aom_variance4x8_neon_dotprod),
+    VarianceParam(4, 16, &svt_aom_variance4x16_c,
+                  &svt_aom_variance4x16_neon_dotprod),
+    VarianceParam(8, 4, &svt_aom_variance8x4_c,
+                  &svt_aom_variance8x4_neon_dotprod),
+    VarianceParam(8, 8, &svt_aom_variance8x8_c,
+                  &svt_aom_variance8x8_neon_dotprod),
+    VarianceParam(8, 16, &svt_aom_variance8x16_c,
+                  &svt_aom_variance8x16_neon_dotprod),
+    VarianceParam(8, 32, &svt_aom_variance8x32_c,
+                  &svt_aom_variance8x32_neon_dotprod),
+    VarianceParam(16, 4, &svt_aom_variance16x4_c,
+                  &svt_aom_variance16x4_neon_dotprod),
+    VarianceParam(16, 8, &svt_aom_variance16x8_c,
+                  &svt_aom_variance16x8_neon_dotprod),
+    VarianceParam(16, 16, &svt_aom_variance16x16_c,
+                  &svt_aom_variance16x16_neon_dotprod),
+    VarianceParam(16, 32, &svt_aom_variance16x32_c,
+                  &svt_aom_variance16x32_neon_dotprod),
+    VarianceParam(16, 64, &svt_aom_variance16x64_c,
+                  &svt_aom_variance16x64_neon_dotprod),
+    VarianceParam(32, 8, &svt_aom_variance32x8_c,
+                  &svt_aom_variance32x8_neon_dotprod),
+    VarianceParam(32, 16, &svt_aom_variance32x16_c,
+                  &svt_aom_variance32x16_neon_dotprod),
+    VarianceParam(32, 32, &svt_aom_variance32x32_c,
+                  &svt_aom_variance32x32_neon_dotprod),
+    VarianceParam(32, 64, &svt_aom_variance32x64_c,
+                  &svt_aom_variance32x64_neon_dotprod),
+    VarianceParam(64, 16, &svt_aom_variance64x16_c,
+                  &svt_aom_variance64x16_neon_dotprod),
+    VarianceParam(64, 32, &svt_aom_variance64x32_c,
+                  &svt_aom_variance64x32_neon_dotprod),
+    VarianceParam(64, 64, &svt_aom_variance64x64_c,
+                  &svt_aom_variance64x64_neon_dotprod),
+    VarianceParam(64, 128, &svt_aom_variance64x128_c,
+                  &svt_aom_variance64x128_neon_dotprod),
+    VarianceParam(128, 64, &svt_aom_variance128x64_c,
+                  &svt_aom_variance128x64_neon_dotprod),
+    VarianceParam(128, 128, &svt_aom_variance128x128_c,
+                  &svt_aom_variance128x128_neon_dotprod)};
+
+INSTANTIATE_TEST_SUITE_P(NEON_DOTPROD, VarianceTest,
+                         ::testing::ValuesIn(variance_func_neon_dotprod));
+#endif  // HAVE_NEON_DOTPROD
+
+#endif  // ARCH_AARCH64
 
 typedef unsigned int (*SubpixVarMxNFunc)(const uint8_t *a, int a_stride,
                                          int xoffset, int yoffset,
@@ -518,9 +653,9 @@ typedef std::tuple<uint32_t, uint32_t, SubpixVarMxNFunc, uint32_t,
                    SubpixVarMxNFunc>
     TestParams;
 
-class AvxSubpelVarianceTest : public ::testing::TestWithParam<TestParams> {
+class SubpelVarianceTest : public ::testing::TestWithParam<TestParams> {
   public:
-    AvxSubpelVarianceTest()
+    SubpelVarianceTest()
         : log2width(TEST_GET_PARAM(0)),
           log2height(TEST_GET_PARAM(1)),
           func_tst(TEST_GET_PARAM(2)),
@@ -532,7 +667,7 @@ class AvxSubpelVarianceTest : public ::testing::TestWithParam<TestParams> {
         if (use_high_bit_depth) {
             mask = (1u << static_cast<unsigned>(use_high_bit_depth)) - 1;
         } else {
-            mask = (1u << AOM_BITS_8) - 1;
+            mask = (1u << EB_EIGHT_BIT) - 1;
         }
 
         if (!use_high_bit_depth) {
@@ -552,7 +687,7 @@ class AvxSubpelVarianceTest : public ::testing::TestWithParam<TestParams> {
         }
     }
 
-    ~AvxSubpelVarianceTest() {
+    ~SubpelVarianceTest() {
         if (!use_high_bit_depth) {
             svt_aom_free(src_);
             svt_aom_free(ref_);
@@ -579,8 +714,14 @@ class AvxSubpelVarianceTest : public ::testing::TestWithParam<TestParams> {
     int block_size;
     int32_t mask;
 };
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(SubpelVarianceTest);
 
-void AvxSubpelVarianceTest::RefTest() {
+void SubpelVarianceTest::RefTest() {
+#if ARCH_AARCH64
+    // Neon implementation of sub_pixel variance functions call variance
+    // functions through the pointers setup by rtcd, so set them up properly.
+    svt_aom_setup_rtcd_internal(EB_CPU_FLAGS_NEON);
+#endif
     SVTRandom rnd_(0, mask);
 
     for (int x = 0; x < 8; ++x) {
@@ -611,7 +752,13 @@ void AvxSubpelVarianceTest::RefTest() {
     }
 }
 
-void AvxSubpelVarianceTest::ExtremeRefTest() {
+void SubpelVarianceTest::ExtremeRefTest() {
+// TODO remove once PRs are merged
+#if ARCH_AARCH64
+    // Neon implementation of sub_pixel variance functions call variance
+    // functions through the pointers setup by rtcd, so set them up properly.
+    svt_aom_setup_rtcd_internal(EB_CPU_FLAGS_NEON);
+#endif
     SVTRandom rnd_(0, mask);
     // Compare against reference.
     // Src: Set the first half of values to 0, the second half to the maximum.
@@ -645,353 +792,231 @@ void AvxSubpelVarianceTest::ExtremeRefTest() {
     }
 }
 
+TEST_P(SubpelVarianceTest, Ref) {
+    RefTest();
+}
+TEST_P(SubpelVarianceTest, ExtremeRef) {
+    ExtremeRefTest();
+}
+
+#ifdef ARCH_X86_64
 const TestParams kArraySubpelVariance_sse2[] = {
-    {7,
-     7,
-     &svt_aom_sub_pixel_variance128x128_sse2,
-     0,
-     &svt_aom_sub_pixel_variance128x128_c},
-    {7,
-     6,
-     &svt_aom_sub_pixel_variance128x64_sse2,
-     0,
-     &svt_aom_sub_pixel_variance128x64_c},
-    {6,
-     7,
-     &svt_aom_sub_pixel_variance64x128_sse2,
-     0,
-     &svt_aom_sub_pixel_variance64x128_c},
-    {6,
-     6,
-     &svt_aom_sub_pixel_variance64x64_sse2,
-     0,
-     &svt_aom_sub_pixel_variance64x64_c},
-    {6,
-     5,
-     &svt_aom_sub_pixel_variance64x32_sse2,
-     0,
-     &svt_aom_sub_pixel_variance64x32_c},
-    {5,
-     6,
-     &svt_aom_sub_pixel_variance32x64_sse2,
-     0,
-     &svt_aom_sub_pixel_variance32x64_c},
-    {5,
-     5,
-     &svt_aom_sub_pixel_variance32x32_sse2,
-     0,
-     &svt_aom_sub_pixel_variance32x32_c},
-    {5,
-     4,
-     &svt_aom_sub_pixel_variance32x16_sse2,
-     0,
-     &svt_aom_sub_pixel_variance32x16_c},
-    {4,
-     5,
-     &svt_aom_sub_pixel_variance16x32_sse2,
-     0,
-     &svt_aom_sub_pixel_variance16x32_c},
-    {4,
-     4,
-     &svt_aom_sub_pixel_variance16x16_sse2,
-     0,
-     &svt_aom_sub_pixel_variance16x16_c},
-    {4,
-     3,
-     &svt_aom_sub_pixel_variance16x8_sse2,
-     0,
-     &svt_aom_sub_pixel_variance16x8_c},
-    {3,
-     4,
-     &svt_aom_sub_pixel_variance8x16_sse2,
-     0,
-     &svt_aom_sub_pixel_variance8x16_c},
-    {3,
-     3,
-     &svt_aom_sub_pixel_variance8x8_sse2,
-     0,
-     &svt_aom_sub_pixel_variance8x8_c},
-    {3,
-     2,
-     &svt_aom_sub_pixel_variance8x4_sse2,
-     0,
-     &svt_aom_sub_pixel_variance8x4_c},
-    {2,
-     3,
-     &svt_aom_sub_pixel_variance4x8_sse2,
-     0,
-     &svt_aom_sub_pixel_variance4x8_c},
-    {2,
-     2,
-     &svt_aom_sub_pixel_variance4x4_sse2,
-     0,
-     &svt_aom_sub_pixel_variance4x4_c},
-    {6,
-     4,
-     &svt_aom_sub_pixel_variance64x16_sse2,
-     0,
-     &svt_aom_sub_pixel_variance64x16_c},
-    {4,
-     6,
-     &svt_aom_sub_pixel_variance16x64_sse2,
-     0,
-     &svt_aom_sub_pixel_variance16x64_c},
-    {5,
-     3,
-     &svt_aom_sub_pixel_variance32x8_sse2,
-     0,
-     &svt_aom_sub_pixel_variance32x8_c},
-    {3,
-     5,
-     &svt_aom_sub_pixel_variance8x32_sse2,
-     0,
-     &svt_aom_sub_pixel_variance8x32_c},
-    {4,
-     2,
-     &svt_aom_sub_pixel_variance16x4_sse2,
-     0,
-     &svt_aom_sub_pixel_variance16x4_c},
-    {2,
-     4,
-     &svt_aom_sub_pixel_variance4x16_sse2,
-     0,
-     &svt_aom_sub_pixel_variance4x16_c}};
-INSTANTIATE_TEST_CASE_P(SSE2, AvxSubpelVarianceTest,
-                        ::testing::ValuesIn(kArraySubpelVariance_sse2));
+    // clang-format off
+    { 7, 7, &svt_aom_sub_pixel_variance128x128_sse2, 0,
+      &svt_aom_sub_pixel_variance128x128_c },
+    { 7, 6, &svt_aom_sub_pixel_variance128x64_sse2, 0,
+      &svt_aom_sub_pixel_variance128x64_c },
+    { 6, 7, &svt_aom_sub_pixel_variance64x128_sse2, 0,
+      &svt_aom_sub_pixel_variance64x128_c },
+    { 6, 6, &svt_aom_sub_pixel_variance64x64_sse2, 0,
+      &svt_aom_sub_pixel_variance64x64_c },
+    { 6, 5, &svt_aom_sub_pixel_variance64x32_sse2, 0,
+      &svt_aom_sub_pixel_variance64x32_c },
+    { 5, 6, &svt_aom_sub_pixel_variance32x64_sse2, 0,
+      &svt_aom_sub_pixel_variance32x64_c },
+    { 5, 5, &svt_aom_sub_pixel_variance32x32_sse2, 0,
+      &svt_aom_sub_pixel_variance32x32_c },
+    { 5, 4, &svt_aom_sub_pixel_variance32x16_sse2, 0,
+      &svt_aom_sub_pixel_variance32x16_c },
+    { 4, 5, &svt_aom_sub_pixel_variance16x32_sse2, 0,
+      &svt_aom_sub_pixel_variance16x32_c },
+    { 4, 4, &svt_aom_sub_pixel_variance16x16_sse2, 0,
+      &svt_aom_sub_pixel_variance16x16_c },
+    { 4, 3, &svt_aom_sub_pixel_variance16x8_sse2, 0,
+      &svt_aom_sub_pixel_variance16x8_c },
+    { 3, 4, &svt_aom_sub_pixel_variance8x16_sse2, 0,
+      &svt_aom_sub_pixel_variance8x16_c },
+    { 3, 3, &svt_aom_sub_pixel_variance8x8_sse2, 0,
+      &svt_aom_sub_pixel_variance8x8_c },
+    { 3, 2, &svt_aom_sub_pixel_variance8x4_sse2, 0,
+      &svt_aom_sub_pixel_variance8x4_c },
+    { 2, 3, &svt_aom_sub_pixel_variance4x8_sse2, 0,
+      &svt_aom_sub_pixel_variance4x8_c },
+    { 2, 2, &svt_aom_sub_pixel_variance4x4_sse2, 0,
+      &svt_aom_sub_pixel_variance4x4_c },
+    { 6, 4, &svt_aom_sub_pixel_variance64x16_sse2, 0,
+      &svt_aom_sub_pixel_variance64x16_c },
+    { 4, 6, &svt_aom_sub_pixel_variance16x64_sse2, 0,
+      &svt_aom_sub_pixel_variance16x64_c },
+    { 5, 3, &svt_aom_sub_pixel_variance32x8_sse2, 0,
+      &svt_aom_sub_pixel_variance32x8_c },
+    { 3, 5, &svt_aom_sub_pixel_variance8x32_sse2, 0,
+      &svt_aom_sub_pixel_variance8x32_c },
+    { 4, 2, &svt_aom_sub_pixel_variance16x4_sse2, 0,
+      &svt_aom_sub_pixel_variance16x4_c },
+    { 2, 4, &svt_aom_sub_pixel_variance4x16_sse2, 0,
+      &svt_aom_sub_pixel_variance4x16_c }
+    // clang-format on
+};
+
+INSTANTIATE_TEST_SUITE_P(SSE2, SubpelVarianceTest,
+                         ::testing::ValuesIn(kArraySubpelVariance_sse2));
 
 const TestParams kArraySubpelVariance_ssse3[] = {
-    {7,
-     7,
-     &svt_aom_sub_pixel_variance128x128_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance128x128_c},
-    {7,
-     6,
-     &svt_aom_sub_pixel_variance128x64_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance128x64_c},
-    {6,
-     7,
-     &svt_aom_sub_pixel_variance64x128_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance64x128_c},
-    {6,
-     6,
-     &svt_aom_sub_pixel_variance64x64_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance64x64_c},
-    {6,
-     5,
-     &svt_aom_sub_pixel_variance64x32_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance64x32_c},
-    {5,
-     6,
-     &svt_aom_sub_pixel_variance32x64_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance32x64_c},
-    {5,
-     5,
-     &svt_aom_sub_pixel_variance32x32_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance32x32_c},
-    {5,
-     4,
-     &svt_aom_sub_pixel_variance32x16_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance32x16_c},
-    {4,
-     5,
-     &svt_aom_sub_pixel_variance16x32_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance16x32_c},
-    {4,
-     4,
-     &svt_aom_sub_pixel_variance16x16_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance16x16_c},
-    {4,
-     3,
-     &svt_aom_sub_pixel_variance16x8_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance16x8_c},
-    {3,
-     4,
-     &svt_aom_sub_pixel_variance8x16_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance8x16_c},
-    {3,
-     3,
-     &svt_aom_sub_pixel_variance8x8_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance8x8_c},
-    {3,
-     2,
-     &svt_aom_sub_pixel_variance8x4_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance8x4_c},
-    {2,
-     3,
-     &svt_aom_sub_pixel_variance4x8_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance4x8_c},
-    {2,
-     2,
-     &svt_aom_sub_pixel_variance4x4_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance4x4_c},
-    {6,
-     4,
-     &svt_aom_sub_pixel_variance64x16_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance64x16_c},
-    {4,
-     6,
-     &svt_aom_sub_pixel_variance16x64_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance16x64_c},
-    {5,
-     3,
-     &svt_aom_sub_pixel_variance32x8_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance32x8_c},
-    {3,
-     5,
-     &svt_aom_sub_pixel_variance8x32_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance8x32_c},
-    {4,
-     2,
-     &svt_aom_sub_pixel_variance16x4_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance16x4_c},
-    {2,
-     4,
-     &svt_aom_sub_pixel_variance4x16_ssse3,
-     0,
-     &svt_aom_sub_pixel_variance4x16_c}};
-INSTANTIATE_TEST_CASE_P(SSSE3, AvxSubpelVarianceTest,
-                        ::testing::ValuesIn(kArraySubpelVariance_ssse3));
+    // clang-format off
+    { 7, 7, &svt_aom_sub_pixel_variance128x128_ssse3, 0,
+      &svt_aom_sub_pixel_variance128x128_c },
+    { 7, 6, &svt_aom_sub_pixel_variance128x64_ssse3, 0,
+      &svt_aom_sub_pixel_variance128x64_c },
+    { 6, 7, &svt_aom_sub_pixel_variance64x128_ssse3, 0,
+      &svt_aom_sub_pixel_variance64x128_c },
+    { 6, 6, &svt_aom_sub_pixel_variance64x64_ssse3, 0,
+      &svt_aom_sub_pixel_variance64x64_c },
+    { 6, 5, &svt_aom_sub_pixel_variance64x32_ssse3, 0,
+      &svt_aom_sub_pixel_variance64x32_c },
+    { 5, 6, &svt_aom_sub_pixel_variance32x64_ssse3, 0,
+      &svt_aom_sub_pixel_variance32x64_c },
+    { 5, 5, &svt_aom_sub_pixel_variance32x32_ssse3, 0,
+      &svt_aom_sub_pixel_variance32x32_c },
+    { 5, 4, &svt_aom_sub_pixel_variance32x16_ssse3, 0,
+      &svt_aom_sub_pixel_variance32x16_c },
+    { 4, 5, &svt_aom_sub_pixel_variance16x32_ssse3, 0,
+      &svt_aom_sub_pixel_variance16x32_c },
+    { 4, 4, &svt_aom_sub_pixel_variance16x16_ssse3, 0,
+      &svt_aom_sub_pixel_variance16x16_c },
+    { 4, 3, &svt_aom_sub_pixel_variance16x8_ssse3, 0,
+      &svt_aom_sub_pixel_variance16x8_c },
+    { 3, 4, &svt_aom_sub_pixel_variance8x16_ssse3, 0,
+      &svt_aom_sub_pixel_variance8x16_c },
+    { 3, 3, &svt_aom_sub_pixel_variance8x8_ssse3, 0,
+      &svt_aom_sub_pixel_variance8x8_c },
+    { 3, 2, &svt_aom_sub_pixel_variance8x4_ssse3, 0,
+      &svt_aom_sub_pixel_variance8x4_c },
+    { 2, 3, &svt_aom_sub_pixel_variance4x8_ssse3, 0,
+      &svt_aom_sub_pixel_variance4x8_c },
+    { 2, 2, &svt_aom_sub_pixel_variance4x4_ssse3, 0,
+      &svt_aom_sub_pixel_variance4x4_c },
+    { 6, 4, &svt_aom_sub_pixel_variance64x16_ssse3, 0,
+      &svt_aom_sub_pixel_variance64x16_c },
+    { 4, 6, &svt_aom_sub_pixel_variance16x64_ssse3, 0,
+      &svt_aom_sub_pixel_variance16x64_c },
+    { 5, 3, &svt_aom_sub_pixel_variance32x8_ssse3, 0,
+      &svt_aom_sub_pixel_variance32x8_c },
+    { 3, 5, &svt_aom_sub_pixel_variance8x32_ssse3, 0,
+      &svt_aom_sub_pixel_variance8x32_c },
+    { 4, 2, &svt_aom_sub_pixel_variance16x4_ssse3, 0,
+      &svt_aom_sub_pixel_variance16x4_c },
+    { 2, 4, &svt_aom_sub_pixel_variance4x16_ssse3, 0,
+      &svt_aom_sub_pixel_variance4x16_c }
+    // clang-format on
+};
+
+INSTANTIATE_TEST_SUITE_P(SSSE3, SubpelVarianceTest,
+                         ::testing::ValuesIn(kArraySubpelVariance_ssse3));
 
 const TestParams kArraySubpelVariance_avx2[] = {
-    {7,
-     7,
-     &svt_aom_sub_pixel_variance128x128_avx2,
-     0,
-     &svt_aom_sub_pixel_variance128x128_c},
-    {7,
-     6,
-     &svt_aom_sub_pixel_variance128x64_avx2,
-     0,
-     &svt_aom_sub_pixel_variance128x64_c},
-    {6,
-     7,
-     &svt_aom_sub_pixel_variance64x128_avx2,
-     0,
-     &svt_aom_sub_pixel_variance64x128_c},
-    {6,
-     6,
-     &svt_aom_sub_pixel_variance64x64_avx2,
-     0,
-     &svt_aom_sub_pixel_variance64x64_c},
-    {6,
-     5,
-     &svt_aom_sub_pixel_variance64x32_avx2,
-     0,
-     &svt_aom_sub_pixel_variance64x32_c},
-    {5,
-     6,
-     &svt_aom_sub_pixel_variance32x64_avx2,
-     0,
-     &svt_aom_sub_pixel_variance32x64_c},
-    {5,
-     5,
-     &svt_aom_sub_pixel_variance32x32_avx2,
-     0,
-     &svt_aom_sub_pixel_variance32x32_c},
-    {5,
-     4,
-     &svt_aom_sub_pixel_variance32x16_avx2,
-     0,
-     &svt_aom_sub_pixel_variance32x16_c},
-    {4,
-     5,
-     &svt_aom_sub_pixel_variance16x32_avx2,
-     0,
-     &svt_aom_sub_pixel_variance16x32_c},
-    {4,
-     4,
-     &svt_aom_sub_pixel_variance16x16_avx2,
-     0,
-     &svt_aom_sub_pixel_variance16x16_c},
-    {4,
-     3,
-     &svt_aom_sub_pixel_variance16x8_avx2,
-     0,
-     &svt_aom_sub_pixel_variance16x8_c},
-    {4,
-     6,
-     &svt_aom_sub_pixel_variance16x64_avx2,
-     0,
-     &svt_aom_sub_pixel_variance16x64_c},
-    {4,
-     2,
-     &svt_aom_sub_pixel_variance16x4_avx2,
-     0,
-     &svt_aom_sub_pixel_variance16x4_c}};
-INSTANTIATE_TEST_CASE_P(AVX2, AvxSubpelVarianceTest,
-                        ::testing::ValuesIn(kArraySubpelVariance_avx2));
+    // clang-format off
+    { 7, 7, &svt_aom_sub_pixel_variance128x128_avx2, 0,
+      &svt_aom_sub_pixel_variance128x128_c },
+    { 7, 6, &svt_aom_sub_pixel_variance128x64_avx2, 0,
+      &svt_aom_sub_pixel_variance128x64_c },
+    { 6, 7, &svt_aom_sub_pixel_variance64x128_avx2, 0,
+      &svt_aom_sub_pixel_variance64x128_c },
+    { 6, 6, &svt_aom_sub_pixel_variance64x64_avx2, 0,
+      &svt_aom_sub_pixel_variance64x64_c },
+    { 6, 5, &svt_aom_sub_pixel_variance64x32_avx2, 0,
+      &svt_aom_sub_pixel_variance64x32_c },
+    { 5, 6, &svt_aom_sub_pixel_variance32x64_avx2, 0,
+      &svt_aom_sub_pixel_variance32x64_c },
+    { 5, 5, &svt_aom_sub_pixel_variance32x32_avx2, 0,
+      &svt_aom_sub_pixel_variance32x32_c },
+    { 5, 4, &svt_aom_sub_pixel_variance32x16_avx2, 0,
+      &svt_aom_sub_pixel_variance32x16_c },
+    { 4, 5, &svt_aom_sub_pixel_variance16x32_avx2, 0,
+      &svt_aom_sub_pixel_variance16x32_c },
+    { 4, 4, &svt_aom_sub_pixel_variance16x16_avx2, 0,
+      &svt_aom_sub_pixel_variance16x16_c },
+    { 4, 3, &svt_aom_sub_pixel_variance16x8_avx2, 0,
+      &svt_aom_sub_pixel_variance16x8_c },
+    { 4, 6, &svt_aom_sub_pixel_variance16x64_avx2, 0,
+      &svt_aom_sub_pixel_variance16x64_c },
+    { 4, 2, &svt_aom_sub_pixel_variance16x4_avx2, 0,
+      &svt_aom_sub_pixel_variance16x4_c }
+    // clang-format on
+};
+
+INSTANTIATE_TEST_SUITE_P(AVX2, SubpelVarianceTest,
+                         ::testing::ValuesIn(kArraySubpelVariance_avx2));
 
 #if EN_AVX512_SUPPORT
 const TestParams kArraySubpelVariance_avx512[] = {
-    {7,
-     7,
-     &svt_aom_sub_pixel_variance128x128_avx512,
-     0,
-     &svt_aom_sub_pixel_variance128x128_c},
-    {7,
-     6,
-     &svt_aom_sub_pixel_variance128x64_avx512,
-     0,
-     &svt_aom_sub_pixel_variance128x64_c},
-    {6,
-     7,
-     &svt_aom_sub_pixel_variance64x128_avx512,
-     0,
-     &svt_aom_sub_pixel_variance64x128_c},
-    {6,
-     6,
-     &svt_aom_sub_pixel_variance64x64_avx512,
-     0,
-     &svt_aom_sub_pixel_variance64x64_c},
-    {6,
-     5,
-     &svt_aom_sub_pixel_variance64x32_avx512,
-     0,
-     &svt_aom_sub_pixel_variance64x32_c},
-    {5,
-     6,
-     &svt_aom_sub_pixel_variance32x64_avx512,
-     0,
-     &svt_aom_sub_pixel_variance32x64_c},
-    {5,
-     5,
-     &svt_aom_sub_pixel_variance32x32_avx512,
-     0,
-     &svt_aom_sub_pixel_variance32x32_c},
-    {5,
-     4,
-     &svt_aom_sub_pixel_variance32x16_avx512,
-     0,
-     &svt_aom_sub_pixel_variance32x16_c}};
-INSTANTIATE_TEST_CASE_P(AVX512, AvxSubpelVarianceTest,
-                        ::testing::ValuesIn(kArraySubpelVariance_avx512));
-#endif
+    // clang-format off
+    { 7, 7, &svt_aom_sub_pixel_variance128x128_avx512, 0,
+      &svt_aom_sub_pixel_variance128x128_c },
+    { 7, 6, &svt_aom_sub_pixel_variance128x64_avx512, 0,
+      &svt_aom_sub_pixel_variance128x64_c },
+    { 6, 7, &svt_aom_sub_pixel_variance64x128_avx512, 0,
+      &svt_aom_sub_pixel_variance64x128_c },
+    { 6, 6, &svt_aom_sub_pixel_variance64x64_avx512, 0,
+      &svt_aom_sub_pixel_variance64x64_c },
+    { 6, 5, &svt_aom_sub_pixel_variance64x32_avx512, 0,
+      &svt_aom_sub_pixel_variance64x32_c },
+    { 5, 6, &svt_aom_sub_pixel_variance32x64_avx512, 0,
+      &svt_aom_sub_pixel_variance32x64_c },
+    { 5, 5, &svt_aom_sub_pixel_variance32x32_avx512, 0,
+      &svt_aom_sub_pixel_variance32x32_c },
+    { 5, 4, &svt_aom_sub_pixel_variance32x16_avx512, 0,
+      &svt_aom_sub_pixel_variance32x16_c }
+    // clang-format on
+};
 
-TEST_P(AvxSubpelVarianceTest, Ref) {
-    RefTest();
-}
-TEST_P(AvxSubpelVarianceTest, ExtremeRef) {
-    ExtremeRefTest();
-}
+INSTANTIATE_TEST_SUITE_P(AVX512, SubpelVarianceTest,
+                         ::testing::ValuesIn(kArraySubpelVariance_avx512));
+#endif
+#endif  // ARCH_X86_64
+
+#if ARCH_AARCH64
+const TestParams kArraySubpelVariance_neon[] = {
+    // clang-format off
+    { 7, 7, &svt_aom_sub_pixel_variance128x128_neon, 0,
+      &svt_aom_sub_pixel_variance128x128_c },
+    { 7, 6, &svt_aom_sub_pixel_variance128x64_neon, 0,
+      &svt_aom_sub_pixel_variance128x64_c },
+    { 6, 7, &svt_aom_sub_pixel_variance64x128_neon, 0,
+      &svt_aom_sub_pixel_variance64x128_c },
+    { 6, 6, &svt_aom_sub_pixel_variance64x64_neon, 0,
+      &svt_aom_sub_pixel_variance64x64_c },
+    { 6, 5, &svt_aom_sub_pixel_variance64x32_neon, 0,
+      &svt_aom_sub_pixel_variance64x32_c },
+    { 5, 6, &svt_aom_sub_pixel_variance32x64_neon, 0,
+      &svt_aom_sub_pixel_variance32x64_c },
+    { 5, 5, &svt_aom_sub_pixel_variance32x32_neon, 0,
+      &svt_aom_sub_pixel_variance32x32_c },
+    { 5, 4, &svt_aom_sub_pixel_variance32x16_neon, 0,
+      &svt_aom_sub_pixel_variance32x16_c },
+    { 4, 5, &svt_aom_sub_pixel_variance16x32_neon, 0,
+      &svt_aom_sub_pixel_variance16x32_c },
+    { 4, 4, &svt_aom_sub_pixel_variance16x16_neon, 0,
+      &svt_aom_sub_pixel_variance16x16_c },
+    { 4, 3, &svt_aom_sub_pixel_variance16x8_neon, 0,
+      &svt_aom_sub_pixel_variance16x8_c },
+    { 3, 4, &svt_aom_sub_pixel_variance8x16_neon, 0,
+      &svt_aom_sub_pixel_variance8x16_c },
+    { 3, 3, &svt_aom_sub_pixel_variance8x8_neon, 0,
+      &svt_aom_sub_pixel_variance8x8_c },
+    { 3, 2, &svt_aom_sub_pixel_variance8x4_neon, 0,
+      &svt_aom_sub_pixel_variance8x4_c },
+    { 2, 3, &svt_aom_sub_pixel_variance4x8_neon, 0,
+      &svt_aom_sub_pixel_variance4x8_c },
+    { 2, 2, &svt_aom_sub_pixel_variance4x4_neon, 0,
+      &svt_aom_sub_pixel_variance4x4_c },
+    { 6, 4, &svt_aom_sub_pixel_variance64x16_neon, 0,
+      &svt_aom_sub_pixel_variance64x16_c },
+    { 4, 6, &svt_aom_sub_pixel_variance16x64_neon, 0,
+      &svt_aom_sub_pixel_variance16x64_c },
+    { 5, 3, &svt_aom_sub_pixel_variance32x8_neon, 0,
+      &svt_aom_sub_pixel_variance32x8_c },
+    { 3, 5, &svt_aom_sub_pixel_variance8x32_neon, 0,
+      &svt_aom_sub_pixel_variance8x32_c },
+    { 4, 2, &svt_aom_sub_pixel_variance16x4_neon, 0,
+      &svt_aom_sub_pixel_variance16x4_c },
+    { 2, 4, &svt_aom_sub_pixel_variance4x16_neon, 0,
+      &svt_aom_sub_pixel_variance4x16_c }
+    // clang-format on
+};
+
+INSTANTIATE_TEST_SUITE_P(NEON, SubpelVarianceTest,
+                         ::testing::ValuesIn(kArraySubpelVariance_neon));
+#endif  // ARCH_AARCH64
+
 }  // namespace

@@ -24,12 +24,18 @@
 /** setup_test_env is a util for unit test setup environment without create a
  * encoder */
 void setup_test_env() {
-#ifdef ARCH_X86_64
-    CPU_FLAGS cpu_flags = get_cpu_flags_to_use();
+#if defined(ARCH_X86_64) || defined(ARCH_AARCH64)
+    EbCpuFlags cpu_flags = svt_aom_get_cpu_flags_to_use();
 #else
-    CPU_FLAGS cpu_flags = 0;
+    EbCpuFlags cpu_flags = 0;
 #endif
-    setup_common_rtcd_internal(cpu_flags);
+    svt_aom_setup_common_rtcd_internal(cpu_flags);
 
-    setup_rtcd_internal(cpu_flags);
+    svt_aom_setup_rtcd_internal(cpu_flags);
+}
+
+void reset_test_env() {
+    EbCpuFlags cpu_flags = 0;
+    svt_aom_setup_common_rtcd_internal(cpu_flags);
+    svt_aom_setup_rtcd_internal(cpu_flags);
 }

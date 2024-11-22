@@ -6,7 +6,7 @@ on: [push]
 jobs:
     build:
         if: ${{ github.event_name == 'push'}}
-        runs-on: windows-2019
+        runs-on: windows-2022
         strategy:
             fail-fast: true
         steps:
@@ -17,7 +17,7 @@ jobs:
             - name: Build SVT-AV1
               run: |
                   cd Build\windows
-                  .\build.bat 2019 release
+                  .\build.bat 2022 release
                   cd ..\..
                   Compress-Archive Bin\Release SVT-AV1-windows-x64.zip
             - name: Create Release
@@ -40,4 +40,4 @@ jobs:
                   asset_path: ./SVT-AV1-windows-x64.zip
                   asset_name: SVT-AV1-windows-x64.zip
                   asset_content_type:  application/zip
-        
+

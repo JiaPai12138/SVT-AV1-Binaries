@@ -14,11 +14,11 @@
 
 #include "gtest/gtest.h"
 #include "aom_dsp_rtcd.h"
-#include "EbDefinitions.h"
+#include "definitions.h"
 #include "acm_random.h"
 #include "util.h"
-#include "EbTime.h"
-#include "EbUtility.h"
+#include "svt_time.h"
+#include "utility.h"
 #include "convolve.h"
 #include "convolve_avx2.h"
 #include "filter.h"
@@ -531,7 +531,7 @@ TEST_P(LowBDConvolveScaleTest, DISABLED_Speed) {
     SpeedTest();
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ConvolveTestScale2D, LowBDConvolveScaleTest,
     ::testing::Combine(::testing::Values(svt_av1_convolve_2d_scale_sse4_1),
                        ::testing::ValuesIn(kBlockDim),
@@ -623,7 +623,7 @@ TEST_P(HighBDConvolveScaleTest, DISABLED_Speed) {
     SpeedTest();
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SSE4_1, HighBDConvolveScaleTest,
     ::testing::Combine(
         ::testing::Values(svt_av1_highbd_convolve_2d_scale_sse4_1),

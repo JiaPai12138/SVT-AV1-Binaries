@@ -13,12 +13,16 @@
 #include <stdlib.h>
 #include "gtest/gtest.h"
 #include "aom_dsp_rtcd.h"
-#include "EbDefinitions.h"
+#include "definitions.h"
 #include "random.h"
 #include "util.h"
-#include "EbUnitTestUtility.h"
+#include "unit_test_utility.h"
 #include "acm_random.h"
 #include "corner_match.h"
+
+#define MATCH_SZ 13
+#define MATCH_SZ_BY2 ((MATCH_SZ - 1) / 2)
+#define MATCH_SZ_SQ (MATCH_SZ * MATCH_SZ)
 
 using libaom_test::ACMRandom;
 
@@ -26,7 +30,7 @@ namespace {
 
 typedef double (*ComputeCrossCorrFunc)(unsigned char *im1, int stride1, int x1,
                                        int y1, unsigned char *im2, int stride2,
-                                       int x2, int y2);
+                                       int x2, int y2, uint8_t match_sz);
 
 using ::testing::make_tuple;
 using ::testing::tuple;
@@ -93,19 +97,20 @@ void AV1CornerMatchTest::RunCheckOutput(int run_times) {
         int y2 = MATCH_SZ_BY2 + rnd_.PseudoUniform(h - 2 * MATCH_SZ_BY2);
 
         double res_c = svt_av1_compute_cross_correlation_c(
-            input1, w, x1, y1, input2, w, x2, y2);
-        double res_simd = target_func(input1, w, x1, y1, input2, w, x2, y2);
+            input1, w, x1, y1, input2, w, x2, y2, MATCH_SZ);
+        double res_simd =
+            target_func(input1, w, x1, y1, input2, w, x2, y2, MATCH_SZ);
 
         if (run_times > 1) {
             svt_av1_get_time(&start_time_seconds, &start_time_useconds);
             for (j = 0; j < run_times; j++) {
                 svt_av1_compute_cross_correlation_c(
-                    input1, w, x1, y1, input2, w, x2, y2);
+                    input1, w, x1, y1, input2, w, x2, y2, MATCH_SZ);
             }
             svt_av1_get_time(&middle_time_seconds, &middle_time_useconds);
 
             for (j = 0; j < run_times; j++) {
-                target_func(input1, w, x1, y1, input2, w, x2, y2);
+                target_func(input1, w, x1, y1, input2, w, x2, y2, MATCH_SZ);
             }
 
             svt_av1_get_time(&finish_time_seconds, &finish_time_useconds);
@@ -150,7 +155,7 @@ TEST_P(AV1CornerMatchTest, DISABLED_Speed) {
     RunCheckOutput(1000);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AV1CornerMatchTest, AV1CornerMatchTest,
     ::testing::Values(make_tuple(0, &svt_av1_compute_cross_correlation_sse4_1),
                       make_tuple(1, &svt_av1_compute_cross_correlation_sse4_1),

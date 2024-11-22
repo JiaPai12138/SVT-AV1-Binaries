@@ -26,23 +26,14 @@
 
 #include "gtest/gtest.h"
 
-// Workaround to eliminate the compiling warning on linux
-// The macro will conflict with definition in gtest.h
-#ifdef __USE_GNU
-#undef __USE_GNU  // defined in EbThreads.h
-#endif
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE  // defined in EbThreads.h
-#endif
-
-#include "EbDefinitions.h"
-#include "EbTransforms.h"
+#include "definitions.h"
+#include "transforms.h"
 #include "util.h"
 #include "aom_dsp_rtcd.h"
 #include "TxfmCommon.h"
 #include "random.h"
-#include "EbTime.h"
-#include "EncodeTxbRef_C.h"
+#include "svt_time.h"
+#include "encode_txb_ref_c.h"
 
 using svt_av1_test_tool::SVTRandom;  // to generate the random
 namespace {
@@ -161,17 +152,27 @@ TEST_P(EncodeTxbTest, GetNzMapTest) {
         TEST_GET_PARAM(0), TEST_GET_PARAM(1), TEST_GET_PARAM(2));
 }
 
-INSTANTIATE_TEST_CASE_P(
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
     SSE2, EncodeTxbTest,
     ::testing::Combine(::testing::Values(&svt_av1_get_nz_map_contexts_sse2),
                        ::testing::Range(0, static_cast<int>(TX_TYPES), 1),
                        ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AVX2, EncodeTxbTest,
     ::testing::Combine(::testing::Values(&svt_av1_get_nz_map_contexts_avx2),
                        ::testing::Range(0, static_cast<int>(TX_TYPES), 1),
                        ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    NEON, EncodeTxbTest,
+    ::testing::Combine(::testing::Values(&svt_av1_get_nz_map_contexts_neon),
+                       ::testing::Range(0, static_cast<int>(TX_TYPES), 1),
+                       ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
+#endif  // ARCH_AARCH64
 
 // test assembly code of svt_av1_txb_init_levels
 using TxbInitLevelsFunc = void (*)(const TranLow *const coeff, const int width,
@@ -306,20 +307,29 @@ TEST_P(EncodeTxbInitLevelTest, DISABLED_txb_init_levels_speed) {
     run_test(TEST_GET_PARAM(0), TEST_GET_PARAM(1), true);
 }
 
-INSTANTIATE_TEST_CASE_P(
-    Entropy, EncodeTxbInitLevelTest,
+#ifdef ARCH_X86_64
+INSTANTIATE_TEST_SUITE_P(
+    AVX2, EncodeTxbInitLevelTest,
     ::testing::Combine(::testing::Values(&svt_av1_txb_init_levels_avx2),
                        ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
 
-INSTANTIATE_TEST_CASE_P(
-    Entropy_SSE41, EncodeTxbInitLevelTest,
+INSTANTIATE_TEST_SUITE_P(
+    SSE4_1, EncodeTxbInitLevelTest,
     ::testing::Combine(::testing::Values(&svt_av1_txb_init_levels_sse4_1),
                        ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
 
 #if EN_AVX512_SUPPORT
-INSTANTIATE_TEST_CASE_P(
-    EntropyAVX512, EncodeTxbInitLevelTest,
+INSTANTIATE_TEST_SUITE_P(
+    AVX512, EncodeTxbInitLevelTest,
     ::testing::Combine(::testing::Values(&svt_av1_txb_init_levels_avx512),
                        ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
 #endif
+#endif  // ARCH_X86_64
+
+#ifdef ARCH_AARCH64
+INSTANTIATE_TEST_SUITE_P(
+    NEON, EncodeTxbInitLevelTest,
+    ::testing::Combine(::testing::Values(&svt_av1_txb_init_levels_neon),
+                       ::testing::Range(0, static_cast<int>(TX_SIZES_ALL), 1)));
+#endif  // ARCH_AARCH64
 }  // namespace

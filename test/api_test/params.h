@@ -29,7 +29,7 @@
 #include <vector>
 #include "EbSvtAv1Enc.h"
 #include "gtest/gtest.h"
-#include "EbDefinitions.h"
+#include "definitions.h"
 
 using std::vector;
 
@@ -146,24 +146,26 @@ static const vector<uint32_t> invalid_hierarchical_levels = {
  * reference picture list 0 and the reference picture list 1 will contain the
  * same reference picture.
  *
- * Following values are supported and defined in EbDefinitions.h
- * #define PRED_LOW_DELAY_P     0
- * #define PRED_LOW_DELAY_B     1
- * #define PRED_RANDOM_ACCESS   2
- * #define PRED_TOTAL_COUNT     3
+ * Following values are supported and defined in definitions.h
+ * #define SVT_AV1_PRED_LOW_DELAY_P     0
+ * #define SVT_AV1_PRED_LOW_DELAY_B     1
+ * #define SVT_AV1_PRED_RANDOM_ACCESS   2
+ * #define SVT_AV1_PRED_TOTAL_COUNT     3
 
  * In Random Access structure, the b/b pictures can refer to reference pictures
  * from both directions (past and future).
  *
  * Default is 2. */
 static const vector<uint8_t> default_pred_structure = {
-    PRED_RANDOM_ACCESS,
+    SVT_AV1_PRED_RANDOM_ACCESS,
 };
 static const vector<uint8_t> valid_pred_structure = {
-    PRED_LOW_DELAY_P, PRED_LOW_DELAY_B, PRED_RANDOM_ACCESS};
+    SVT_AV1_PRED_LOW_DELAY_P,
+    SVT_AV1_PRED_LOW_DELAY_B,
+    SVT_AV1_PRED_RANDOM_ACCESS};
 static const vector<uint8_t> invalid_pred_structure = {
     /* _pred_structure override in code
-    PRED_TOTAL_COUNT, PRED_TOTAL_COUNT + 1, EB_PRED_INVALID*/};
+    SVT_AV1_PRED_TOTAL_COUNT, SVT_AV1_PRED_TOTAL_COUNT + 1, EB_PRED_INVALID*/};
 
 // Input Info
 /* The width of input source in units of picture luma pixels.
@@ -709,28 +711,32 @@ static const vector<uint32_t> invalid_level = {
  * 1 = up to AVX512, auto-select highest assembly instruction set supported.
  *
  * Default is 1. */
-static const vector<CPU_FLAGS> default_use_cpu_flags = {
-    CPU_FLAGS_ALL,
+static const vector<EbCpuFlags> default_use_cpu_flags = {
+    EB_CPU_FLAGS_ALL,
 };
-static const vector<CPU_FLAGS> valid_use_cpu_flags = {
-    CPU_FLAGS_MMX,
-    CPU_FLAGS_SSE,
-    CPU_FLAGS_SSE2,
-    CPU_FLAGS_SSE3,
-    CPU_FLAGS_SSSE3,
-    CPU_FLAGS_SSE4_1,
-    CPU_FLAGS_SSE4_2,
-    CPU_FLAGS_AVX,
-    CPU_FLAGS_AVX2,
-    CPU_FLAGS_AVX512F,
-    CPU_FLAGS_AVX512CD,
-    CPU_FLAGS_AVX512DQ,
-    CPU_FLAGS_AVX512ER,
-    CPU_FLAGS_AVX512PF,
-    CPU_FLAGS_AVX512BW,
-    CPU_FLAGS_AVX512VL,
+static const vector<EbCpuFlags> valid_use_cpu_flags = {
+#ifdef ARCH_X86_64
+    EB_CPU_FLAGS_MMX,
+    EB_CPU_FLAGS_SSE,
+    EB_CPU_FLAGS_SSE2,
+    EB_CPU_FLAGS_SSE3,
+    EB_CPU_FLAGS_SSSE3,
+    EB_CPU_FLAGS_SSE4_1,
+    EB_CPU_FLAGS_SSE4_2,
+    EB_CPU_FLAGS_AVX,
+    EB_CPU_FLAGS_AVX2,
+    EB_CPU_FLAGS_AVX512F,
+    EB_CPU_FLAGS_AVX512CD,
+    EB_CPU_FLAGS_AVX512DQ,
+    EB_CPU_FLAGS_AVX512ER,
+    EB_CPU_FLAGS_AVX512PF,
+    EB_CPU_FLAGS_AVX512BW,
+    EB_CPU_FLAGS_AVX512VL,
+#elif defined(ARCH_AARCH64)
+    EB_CPU_FLAGS_NEON,
+#endif
 };
-static const vector<CPU_FLAGS> invalid_use_cpu_flags = {CPU_FLAGS_INVALID};
+static const vector<EbCpuFlags> invalid_use_cpu_flags = {EB_CPU_FLAGS_INVALID};
 
 // Application Specific parameters
 /**
@@ -795,6 +801,34 @@ static const vector<uint32_t> invalid_speed_control_flag = {
 
 // Threads management
 
+#if CLN_LP_LVLS
+#if SVT_AV1_CHECK_VERSION(3, 0, 0)
+/* The level of parallelism the encoder employs (how many threads and pictures
+ * to create). */
+static const vector<uint32_t> default_level_of_parallelism = {
+    0,
+};
+static const vector<uint32_t> valid_level_of_parallelism = {
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    20,
+    40,
+    1000,
+    0xFFFFFFFF,
+};
+static const vector<uint32_t> invalid_level_of_parallelism = {
+    // ...
+};
+#else
 /* The number of logical processor which encoder threads run on. If
  * LogicalProcessors and TargetSocket are not set, threads are managed by
  * OS thread scheduler. */
@@ -821,6 +855,35 @@ static const vector<uint32_t> valid_logical_processors = {
 static const vector<uint32_t> invalid_logical_processors = {
     // ...
 };
+#endif
+#else
+/* The number of logical processor which encoder threads run on. If
+ * LogicalProcessors and TargetSocket are not set, threads are managed by
+ * OS thread scheduler. */
+static const vector<uint32_t> default_logical_processors = {
+    0,
+};
+static const vector<uint32_t> valid_logical_processors = {
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    20,
+    40,
+    1000,
+    0xFFFFFFFF,
+};
+static const vector<uint32_t> invalid_logical_processors = {
+    // ...
+};
+#endif
 
 /* Target socket to run on. For dual socket systems, this can specify which
  * socket the encoder runs on.

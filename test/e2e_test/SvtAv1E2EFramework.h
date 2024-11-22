@@ -26,7 +26,7 @@
 #include "FrameQueue.h"
 #include "PerformanceCollect.h"
 #include "CompareTools.h"
-#include "EbDefinitions.h"
+#include "definitions.h"
 #include "RefDecoder.h"
 // Copied from EbAppProcessCmd.c
 #define LONG_ENCODE_FRAME_ENCODE 4000
@@ -120,6 +120,12 @@ class SvtAv1E2ETestFramework : public ::testing::TestWithParam<EncTestSetting> {
        will not break the whole test.
     */
     void run_death_test();
+
+    /* generate event list by frame settings,
+       e.g. reference scaling
+    */
+    void gen_frame_event(EncTestSetting &setting, uint32_t frame_count,
+                         void **head);
 
   public:
     static VideoSource *prepare_video_src(const TestVideoVector &vector);
