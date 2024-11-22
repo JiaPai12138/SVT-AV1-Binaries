@@ -22,22 +22,12 @@ jobs:
                   Compress-Archive Bin\Release SVT-AV1-windows-x64.zip
             - name: Create Release
               id: create_release
-              uses: iamkubi/github-release@v2.0.4
+              uses: softprops/action-gh-release@v2.1.0
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
-                  tag_name: ${{ github.run_number }}
-                  release_name: Release ${{ github.run_number }}
+                  tag: ${{ github.run_number }}
+                  name: Release ${{ github.run_number }}
                   draft: false
                   prerelease: false
-            - name: Upload binaries
-              id: upload-binaries
-              uses: sekwah41/upload-release-assets@v1.1.0
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              with:
-                  upload_url: ${{ steps.create_release.outputs.upload_url }}
-                  asset_path: ./SVT-AV1-windows-x64.zip
-                  asset_name: SVT-AV1-windows-x64.zip
-                  asset_content_type:  application/zip
-
+                  files: ./SVT-AV1-windows-x64.zip  # Path to the file to upload
